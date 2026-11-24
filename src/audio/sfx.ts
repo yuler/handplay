@@ -273,6 +273,72 @@ class SoundEngine {
     }
   }
 
+  /** Cute kitten meow for Kitty Chase */
+  meow(happy = false) {
+    const start = happy ? 740 : 620;
+    const peak = happy ? 1120 : 900;
+    const end = happy ? 840 : 540;
+    this.tone(start, peak, 0.09, 'triangle', 0.14, 0);
+    this.tone(peak, end, 0.18, 'sine', 0.13, 0.08);
+    this.vibrate(12);
+  }
+
+  /** Warm kitten purr + happy chime when petted */
+  purr() {
+    this.tone(180, 165, 0.16, 'triangle', 0.09, 0);
+    this.tone(185, 170, 0.16, 'triangle', 0.09, 0.17);
+    this.tone(783.99, 1046.5, 0.16, 'sine', 0.11, 0.06);
+    this.tone(1046.5, 1318.5, 0.18, 'sine', 0.1, 0.16);
+    this.vibrate([12, 30, 14]);
+  }
+
+  /** Tiny jingle bell on cat wand */
+  bell() {
+    this.tone(1760, 1820, 0.08, 'sine', 0.06, 0);
+    this.tone(2637, 2600, 0.07, 'sine', 0.04, 0.02);
+  }
+
+  /** Gentle puddle splash */
+  splash() {
+    this.noise(0.18, 1200, 380, 0.1, 0, 1.1);
+    this.tone(420, 240, 0.12, 'sine', 0.1, 0.02);
+    this.vibrate(18);
+  }
+
+  /** Pentatonic musical bubble pop */
+  bubbleNote(step: number) {
+    const notes = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.5];
+    const f = notes[((step % notes.length) + notes.length) % notes.length];
+    this.tone(f * 0.85, f * 1.15, 0.07, 'sine', 0.14, 0);
+    this.tone(f, f * 1.01, 0.18, 'triangle', 0.12, 0.03);
+    this.vibrate(10);
+  }
+
+  /** Giant golden bubble harmonic burst */
+  bigBubblePop() {
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      this.tone(f, f * 1.04, 0.22, 'triangle', 0.13, i * 0.045);
+    });
+    this.noise(0.24, 2400, 5600, 0.05, 0.06, 1.8);
+    this.vibrate([16, 28, 22]);
+  }
+
+  /** Soft airy whoosh when fanning away storm clouds */
+  fanAway() {
+    this.noise(0.2, 500, 2200, 0.09, 0, 1.2);
+    this.tone(540, 880, 0.12, 'sine', 0.09, 0.03);
+    this.vibrate(12);
+  }
+
+  /** Joyful animal expression matched chime */
+  animalYay(combo = 1) {
+    const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5];
+    const f = scale[Math.min(scale.length - 1, Math.max(0, combo - 1))];
+    this.tone(f, f * 1.25, 0.11, 'triangle', 0.15, 0);
+    this.tone(f * 1.5, f * 1.52, 0.18, 'sine', 0.12, 0.08);
+    this.vibrate([12, 24, 14]);
+  }
+
   finish() {
     this.tone(523.25, 523.25, 0.15, 'triangle', 0.15, 0);
     this.tone(659.25, 659.25, 0.15, 'triangle', 0.15, 0.12);

@@ -335,6 +335,18 @@ button {
   box-shadow: 0 2px 0 var(--ink);
 }
 
+.game-card.kitty {
+  background: linear-gradient(160deg, #fff 55%, #ffecd1 100%);
+}
+
+.game-card.animal {
+  background: linear-gradient(160deg, #fff 55%, #ffe6f0 100%);
+}
+
+.game-card.bubble {
+  background: linear-gradient(160deg, #fff 55%, #d9f8ff 100%);
+}
+
 .game-card.rush {
   background: linear-gradient(160deg, #fff 55%, #ffe3df 100%);
 }
@@ -368,6 +380,21 @@ button {
   display: grid;
   place-items: center;
   font-size: 42px;
+  transform: rotate(-6deg);
+}
+
+.kitty .game-icon {
+  background: #ffb35c;
+  transform: rotate(-5deg);
+}
+
+.animal .game-icon {
+  background: #ff9ec4;
+  transform: rotate(-5deg);
+}
+
+.bubble .game-icon {
+  background: #7cdfff;
   transform: rotate(-6deg);
 }
 
@@ -432,6 +459,8 @@ button {
   white-space: nowrap;
 }
 
+.kitty .best-sticker,
+.bubble .best-sticker,
 .sling .best-sticker,
 .munch .best-sticker,
 .dual .best-sticker {
