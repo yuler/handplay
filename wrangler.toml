@@ -1,0 +1,10 @@
+name = "handplay"
+compatibility_date = "2026-11-01"
+
+routes = [
+  { pattern = "handplay.yuler.dev", custom_domain = true }
+]
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
