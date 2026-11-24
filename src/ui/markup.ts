@@ -85,7 +85,7 @@ export const APP_HTML = `
         <div id="loader-title" class="loader-title">准备开玩啦！</div>
         <div id="loader-steps" class="loader-steps">
           <div class="step"><span>📷 摄像头</span><b id="step-cam">请点「允许」</b></div>
-          <div class="step"><span>🧠 小手识别</span><b id="step-model">下载中</b></div>
+          <div class="step"><span id="step-model-label">🧠 小手识别</span><b id="step-model">下载中</b></div>
         </div>
         <div id="loader-bar" class="progress-bar"><div id="loader-fill" class="progress-fill"></div></div>
         <div id="loader-pct" class="loader-pct">0%</div>
