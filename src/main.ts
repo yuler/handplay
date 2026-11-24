@@ -1,115 +1,13 @@
 import './style.css';
 import { sfx } from './audio/sfx';
-import { AirSlingshotGame } from './games/airSlingshot';
-import { DualHandGame } from './games/dualHand';
-import { FingerRuneGame } from './games/fingerRune';
-import { GestureRushGame } from './games/gestureRush';
-import { MouthMunchGame } from './games/mouthMunch';
-import { NoBlinkGame } from './games/noBlink';
 import type { GameController, GameId, GameOverSummary, SensorMode } from './games/types';
+import { popConfetti } from './ui/confetti';
+import { APP_HTML } from './ui/markup';
 import { CameraManager } from './vision/camera';
 import { EMPTY_FACE, FaceEngine } from './vision/faceEngine';
-import { EMPTY_HAND, HandEngine, type InitProgress } from './vision/handEngine';
+import { EMPTY_HAND, HandEngine, type InitProgress, type VisionLoadState } from './vision/handEngine';
 
 const BEST_KEY = 'handplay:best:v1';
-
-interface GameCardConfig {
-  id: GameId;
-  cls: string;
-  icon: string;
-  title: string;
-  desc: string;
-  tags: string[];
-  sensor: SensorMode;
-  sensorBadge: string;
-}
-
-interface LobbySection {
-  title: string;
-  games: GameCardConfig[];
-}
-
-const LOBBY_SECTIONS: LobbySection[] = [
-  {
-    title: '✋ 单手隔空玩',
-    games: [
-      {
-        id: 'gesture-rush',
-        cls: 'rush',
-        icon: '✌️',
-        title: '闪电结印',
-        desc: '限时比出 ✊☝️✌️🖐️👍👌 对应手势，5 连击进入狂热翻倍，还会触发手指心算挑战！',
-        tags: ['45 秒街机', '6 种手势 + 心算'],
-        sensor: 'hand1',
-        sensorBadge: '✋ 单手',
-      },
-      {
-        id: 'air-slingshot',
-        cls: 'sling',
-        icon: '🤏',
-        title: '空气弹弓',
-        desc: '拇指+食指隔空捏合拉起能量弹弓，看抛物线瞄准，松手弹射打爆移动靶与星星！',
-        tags: ['60 秒射击', '隔空捏合 Pinch'],
-        sensor: 'hand1',
-        sensorBadge: '✋ 单手',
-      },
-      {
-        id: 'finger-rune',
-        cls: 'rune',
-        icon: '☝️',
-        title: '一指画符',
-        desc: '伸出食指当魔法棒，隔空画出 — | ○ ∧ ∨ 符咒，连锁闪电秒杀同符号妖怪！',
-        tags: ['50 秒施法', '5 种魔法符咒'],
-        sensor: 'hand1',
-        sensorBadge: '✋ 单手',
-      },
-    ],
-  },
-  {
-    title: '😜 完全解放双手（脸部体感）',
-    games: [
-      {
-        id: 'mouth-munch',
-        cls: 'munch',
-        icon: '😮',
-        title: '大嘴吞星',
-        desc: '躺着也能玩！歪头移动、张大嘴漩涡吸星、眨眼发射双激光击碎冰块、鼓腮开护盾！',
-        tags: ['50 秒街机', '张嘴 + 眨眼 + 鼓腮'],
-        sensor: 'face',
-        sensorBadge: '😜 纯脸部',
-      },
-      {
-        id: 'no-blink',
-        cls: 'noblink',
-        icon: '👁️',
-        title: '别眨眼 / 憋笑',
-        desc: '飞虫骚扰 + 冷笑话轰炸！局内一键切换「别眨眼 / 憋笑挑战」，破功瞬间自动抓拍留念！',
-        tags: ['双模式生存', '破功抓拍保存'],
-        sensor: 'face',
-        sensorBadge: '😜 纯脸部',
-      },
-    ],
-  },
-  {
-    title: '🙌 桌面支架挑战（双手同屏）',
-    games: [
-      {
-        id: 'dual-hand',
-        cls: 'dual',
-        icon: '🙌',
-        title: '左右手快闪',
-        desc: '把手机靠在桌上，同时举起双手！左手右手比出不同手势，还会突然「左右互换」烧脑挑战！',
-        tags: ['45 秒脑力', '左右互换'],
-        sensor: 'hand2',
-        sensorBadge: '🙌 双手支架',
-      },
-    ],
-  },
-];
-
-const GAME_SENSOR: Record<GameId, SensorMode> = Object.fromEntries(
-  LOBBY_SECTIONS.flatMap((s) => s.games.map((g) => [g.id, g.sensor])),
-) as Record<GameId, SensorMode>;
 
 const DEFAULT_BEST: Record<GameId, number> = {
   'gesture-rush': 0,
@@ -118,6 +16,15 @@ const DEFAULT_BEST: Record<GameId, number> = {
   'mouth-munch': 0,
   'no-blink': 0,
   'dual-hand': 0,
+};
+
+const GAME_SENSOR: Record<GameId, SensorMode> = {
+  'gesture-rush': 'hand1',
+  'air-slingshot': 'hand1',
+  'finger-rune': 'hand1',
+  'mouth-munch': 'face',
+  'no-blink': 'face',
+  'dual-hand': 'hand2',
 };
 
 function loadBest(): Record<GameId, number> {
@@ -145,134 +52,53 @@ function saveBest(id: GameId, score: number): boolean {
   return false;
 }
 
-function formatBestLabel(id: GameId, score: number): string {
-  if (id === 'no-blink') {
-    return `最高 ${(score / 10).toFixed(1)} 秒`;
-  }
-  return `最高 ${score} 分`;
-}
+type GameCtor = new (onFinish: (summary: GameOverSummary) => void) => GameController;
 
-function renderLobbyCards(): string {
-  return LOBBY_SECTIONS.map(
-    (section) => `
-      <div class="section-group">
-        <div class="section-label">${section.title}</div>
-        <div class="card-list">
-          ${section.games
-            .map(
-              (g) => `
-            <button class="game-card ${g.cls}" data-game="${g.id}">
-              <div class="game-icon">${g.icon}</div>
-              <div class="game-meta">
-                <div class="game-title-row">
-                  <h2>${g.title}</h2>
-                  <span id="best-${g.id}" class="best-tag">最高 0 分</span>
-                </div>
-                <p>${g.desc}</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">${g.sensorBadge}</span>
-                  ${g.tags.map((t) => `<span class="mini-tag">${t}</span>`).join('')}
-                </div>
-              </div>
-            </button>`,
-            )
-            .join('')}
-        </div>
-      </div>
-    `,
-  ).join('');
-}
+const GAME_MODULES: Record<GameId, () => Promise<GameCtor>> = {
+  'gesture-rush': () => import('./games/gestureRush').then((m) => m.GestureRushGame),
+  'air-slingshot': () => import('./games/airSlingshot').then((m) => m.AirSlingshotGame),
+  'finger-rune': () => import('./games/fingerRune').then((m) => m.FingerRuneGame),
+  'mouth-munch': () => import('./games/mouthMunch').then((m) => m.MouthMunchGame),
+  'no-blink': () => import('./games/noBlink').then((m) => m.NoBlinkGame),
+  'dual-hand': () => import('./games/dualHand').then((m) => m.DualHandGame),
+};
 
 const app = document.getElementById('app')!;
-app.innerHTML = `
-  <div class="stage-wrap">
-    <video id="cam" class="cam-video hidden" playsinline autoplay muted></video>
-    <canvas id="canvas" class="game-canvas"></canvas>
+app.innerHTML = APP_HTML;
 
-    <div id="hud" class="hud-bar" style="display:none">
-      <div class="hud-group">
-        <button id="btn-home" class="icon-btn" aria-label="返回大厅">←</button>
-        <div id="hud-score" class="pill score">0</div>
-      </div>
-      <div class="hud-group">
-        <div id="hud-timer" class="pill timer">⏱ 45</div>
-        <button id="btn-dim" class="icon-btn" aria-label="切换背景透明度">◐</button>
-        <button id="btn-mute" class="icon-btn" aria-label="静音开关">🔊</button>
-      </div>
-    </div>
-    <div id="fps-tag" class="fps-tag" style="display:none"></div>
-
-    <!-- Lobby -->
-    <div id="lobby" class="overlay lobby-overlay">
-      <div class="brand">
-        <span class="brand-badge">ONLY MOBILE · WEBASSEMBLY AI</span>
-        <h1>HandPlay 隔空玩</h1>
-        <p>手势 + 脸部 6 款前置摄像头体感小游戏<br/>无需安装 · 画面纯本地推理绝不上传</p>
-      </div>
-      <div class="lobby-sections">
-        ${renderLobbyCards()}
-      </div>
-      <p class="privacy-note">
-        🔒 基于 MediaPipe Hand + Face Landmarker WASM + One Euro Filter<br/>
-        摄像头画面仅在本机内存实时推理，绝不上传服务器
-      </p>
-    </div>
-
-    <!-- Loader / Error -->
-    <div id="loader" class="overlay hidden">
-      <div class="loader-box">
-        <div id="loader-spinner" class="spinner"></div>
-        <div id="loader-text" style="font-weight:800;font-size:15px;">正在准备…</div>
-        <div id="loader-bar" class="progress-bar"><div id="loader-fill" class="progress-fill"></div></div>
-        <div id="loader-error" class="error-msg" style="display:none"></div>
-        <button id="loader-back" class="btn btn-ghost" style="display:none;width:100%">返回重试</button>
-      </div>
-    </div>
-
-    <!-- Result -->
-    <div id="result" class="overlay hidden">
-      <div class="result-card">
-        <div id="res-title" style="font-size:15px;font-weight:800;color:#94a3b8;">本局结束</div>
-        <div id="res-score" class="result-score">0</div>
-        <div id="res-record" class="new-record" style="display:none">🏆 刷新最高纪录！</div>
-        <div id="res-snapshot-wrap" class="snapshot-wrap" style="display:none">
-          <img id="res-snapshot" class="snapshot-img" alt="破功瞬间抓拍" />
-          <a id="res-download" class="btn btn-snapshot" download="handplay-snapshot.jpg">📸 保存破功照</a>
-        </div>
-        <div id="res-stats" class="stat-grid"></div>
-        <div class="btn-row">
-          <button id="res-home" class="btn btn-ghost">换个游戏</button>
-          <button id="res-again" class="btn btn-primary">再来一局</button>
-        </div>
-      </div>
-    </div>
-  </div>
-`;
-
-const videoEl = document.getElementById('cam') as HTMLVideoElement;
-const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
+const $ = (id: string) => document.getElementById(id)!;
+const videoEl = $('cam') as HTMLVideoElement;
+const canvasEl = $('canvas') as HTMLCanvasElement;
 const ctx = canvasEl.getContext('2d')!;
 
-const hudEl = document.getElementById('hud')!;
-const hudScoreEl = document.getElementById('hud-score')!;
-const hudTimerEl = document.getElementById('hud-timer')!;
-const fpsTagEl = document.getElementById('fps-tag')!;
-const lobbyEl = document.getElementById('lobby')!;
-const loaderEl = document.getElementById('loader')!;
-const loaderSpinner = document.getElementById('loader-spinner')!;
-const loaderText = document.getElementById('loader-text')!;
-const loaderBar = document.getElementById('loader-bar')!;
-const loaderFill = document.getElementById('loader-fill')!;
-const loaderError = document.getElementById('loader-error')!;
-const loaderBack = document.getElementById('loader-back')!;
-const resultEl = document.getElementById('result')!;
-const resTitle = document.getElementById('res-title')!;
-const resScore = document.getElementById('res-score')!;
-const resRecord = document.getElementById('res-record')!;
-const resSnapshotWrap = document.getElementById('res-snapshot-wrap')!;
-const resSnapshot = document.getElementById('res-snapshot') as HTMLImageElement;
-const resDownload = document.getElementById('res-download') as HTMLAnchorElement;
-const resStats = document.getElementById('res-stats')!;
+const hudEl = $('hud');
+const hudScoreEl = $('hud-score');
+const hudTimerEl = $('hud-timer');
+const fpsTagEl = $('fps-tag');
+const lobbyEl = $('lobby');
+const prefetchChip = $('prefetch-chip');
+const loaderEl = $('loader');
+const loaderTitle = $('loader-title');
+const loaderSteps = $('loader-steps');
+const stepCam = $('step-cam');
+const stepModelLabel = $('step-model-label');
+const stepModel = $('step-model');
+const loaderBar = $('loader-bar');
+const loaderFill = $('loader-fill');
+const loaderPct = $('loader-pct');
+const loaderError = $('loader-error');
+const loaderBack = $('loader-back');
+const resultEl = $('result');
+const resultCard = $('result-card');
+const confettiEl = $('confetti');
+const resHeadline = $('res-headline');
+const resTitle = $('res-title');
+const resScore = $('res-score');
+const resRecord = $('res-record');
+const resSnapshotWrap = $('res-snapshot-wrap');
+const resSnapshot = $('res-snapshot') as HTMLImageElement;
+const resDownload = $('res-download') as HTMLAnchorElement;
+const resStats = $('res-stats');
 
 const camera = new CameraManager();
 const handEngine = new HandEngine();
@@ -281,15 +107,18 @@ const faceEngine = new FaceEngine();
 let activeGame: GameController | null = null;
 let screenState: 'lobby' | 'loading' | 'playing' | 'result' = 'lobby';
 let lastFrameTime = 0;
-let lastCountdownTick = 99;
+let lastHudTime = -1;
+let lastHudScore = 0;
+let recordTimer = 0;
 let vw = window.innerWidth;
 let vh = window.innerHeight;
-let dpr = Math.min(2, window.devicePixelRatio || 1);
+// 1.5x keeps cartoon strokes crisp on phones while filling far fewer pixels than 2-3x
+let dpr = Math.min(1.5, window.devicePixelRatio || 1);
 
 function resize() {
   vw = window.innerWidth;
   vh = window.innerHeight;
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  dpr = Math.min(1.5, window.devicePixelRatio || 1);
   canvasEl.width = Math.round(vw * dpr);
   canvasEl.height = Math.round(vh * dpr);
 }
@@ -300,76 +129,132 @@ function refreshBestTags() {
   const best = loadBest();
   for (const id of Object.keys(DEFAULT_BEST) as GameId[]) {
     const el = document.getElementById(`best-${id}`);
-    if (el) el.textContent = formatBestLabel(id, best[id] ?? 0);
+    if (!el) continue;
+    const score = best[id] ?? 0;
+    if (score <= 0) {
+      el.textContent = '✨ 来试试';
+    } else if (id === 'no-blink') {
+      el.textContent = `🏆 ${(score / 10).toFixed(1)} 秒`;
+    } else {
+      el.textContent = `🏆 最高 ${score}`;
+    }
   }
 }
 refreshBestTags();
 
-function createGame(id: GameId): GameController {
-  const onFinish = (summary: GameOverSummary) => {
-    screenState = 'result';
-    const isNew = saveBest(summary.gameId, summary.score);
-    refreshBestTags();
-    resTitle.textContent = `${summary.gameName} · 本局结束`;
-    resScore.textContent = summary.scoreDisplay ?? `${summary.score}`;
-    resRecord.style.display = isNew && summary.score > 0 ? 'inline-block' : 'none';
-    if (isNew && summary.score > 0) sfx.newRecord();
+// ---- Background prefetch while the lobby is on screen (no camera request here) ----
+let lastChipText = '';
+handEngine.onLoadChange((s: VisionLoadState) => {
+  const pct = Math.round(Math.min(1, s.loaded / Math.max(1, s.total)) * 100);
+  const text =
+    s.stage === 'ready'
+      ? '✅ 准备好啦，点一张卡片开玩！'
+      : s.stage === 'init'
+        ? '🧠 马上就好…'
+        : s.stage === 'error'
+          ? '📶 网络有点慢，点卡片时会再试一次'
+          : s.stage === 'download'
+            ? `🧠 正在准备 AI 识别… ${pct}%`
+            : '🧠 正在准备 AI 识别…';
+  if (text === lastChipText) return;
+  lastChipText = text;
+  prefetchChip.textContent = text;
+  prefetchChip.classList.toggle('ready', s.stage === 'ready');
+});
 
-    if (summary.snapshotUrl) {
-      resSnapshot.src = summary.snapshotUrl;
-      resDownload.href = summary.snapshotUrl;
-      resDownload.download = summary.snapshotFilename ?? 'handplay-snapshot.jpg';
-      resSnapshotWrap.style.display = 'flex';
-    } else {
-      resSnapshotWrap.style.display = 'none';
-      resSnapshot.removeAttribute('src');
-    }
+requestAnimationFrame(() =>
+  window.setTimeout(() => {
+    handEngine
+      .preload()
+      .catch((err) => console.warn('[HandPlay] hand prefetch failed, will retry on start:', err));
+  }, 0),
+);
 
-    resStats.innerHTML = summary.stats
-      .map((s) => `<div class="stat-item"><small>${s.label}</small><b>${s.value}</b></div>`)
-      .join('');
-    resultEl.classList.remove('hidden');
-  };
+// ---- Loader ----
+function renderLoader(modelName: string, { cameraReady, load }: InitProgress) {
+  const dl = Math.min(1, load.loaded / Math.max(1, load.total));
+  const model =
+    load.stage === 'ready' ? 1 : load.stage === 'init' ? 0.9 : load.stage === 'download' ? dl * 0.85 : 0;
+  const pct = Math.round((model * 0.85 + (cameraReady ? 0.15 : 0)) * 100);
+  loaderFill.style.width = `${Math.max(4, pct)}%`;
+  loaderPct.textContent = `${pct}%`;
 
-  switch (id) {
-    case 'gesture-rush':
-      return new GestureRushGame(onFinish);
-    case 'air-slingshot':
-      return new AirSlingshotGame(onFinish);
-    case 'finger-rune':
-      return new FingerRuneGame(onFinish);
-    case 'mouth-munch':
-      return new MouthMunchGame(onFinish);
-    case 'no-blink':
-      return new NoBlinkGame(onFinish);
-    case 'dual-hand':
-      return new DualHandGame(onFinish);
+  stepCam.textContent = cameraReady ? '好啦 ✓' : '请点「允许」';
+  stepCam.classList.toggle('done', cameraReady);
+  stepModel.textContent =
+    load.stage === 'ready'
+      ? '好啦 ✓'
+      : load.stage === 'init'
+        ? '唤醒中…'
+        : load.stage === 'download'
+          ? `下载中 ${Math.round(dl * 100)}%`
+          : '准备中…';
+  stepModel.classList.toggle('done', load.stage === 'ready');
+
+  loaderTitle.textContent =
+    cameraReady && load.stage === 'ready'
+      ? '马上开始！'
+      : cameraReady
+        ? `${modelName}马上就好…`
+        : '准备开玩啦！';
+}
+
+function showLoaderError(err: unknown) {
+  loaderTitle.textContent = '哎呀，没打开 😢';
+  loaderSteps.style.display = 'none';
+  loaderBar.style.display = 'none';
+  loaderPct.style.display = 'none';
+  loaderError.style.display = 'block';
+  loaderError.textContent = err instanceof Error ? err.message : String(err);
+  loaderBack.style.display = 'block';
+  sfx.miss();
+}
+
+// ---- Result ----
+function onFinish(summary: GameOverSummary) {
+  screenState = 'result';
+  const isNew = saveBest(summary.gameId, summary.score) && summary.score > 0;
+  refreshBestTags();
+  resHeadline.textContent = isNew ? '新纪录！你最棒！' : summary.score > 0 ? '玩得真好！' : '再试一次吧！';
+  resTitle.textContent = `${summary.gameName} · 本局成绩`;
+  resScore.textContent = summary.scoreDisplay ?? `${summary.score}`;
+  resScore.classList.toggle('compact', Boolean(summary.scoreDisplay));
+  resRecord.style.display = isNew ? 'inline-block' : 'none';
+  resultCard.classList.toggle('record', isNew);
+
+  if (summary.snapshotUrl) {
+    resSnapshot.src = summary.snapshotUrl;
+    resDownload.href = summary.snapshotUrl;
+    resDownload.download = summary.snapshotFilename ?? 'handplay-snapshot.jpg';
+    resSnapshotWrap.style.display = 'flex';
+  } else {
+    resSnapshotWrap.style.display = 'none';
+    resSnapshot.removeAttribute('src');
+  }
+
+  resStats.innerHTML = summary.stats
+    .map((s) => `<div class="stat-item"><small>${s.label}</small><b>${s.value}</b></div>`)
+    .join('');
+  resultEl.classList.remove('hidden');
+  sfx.whoosh();
+  if (summary.score > 0) popConfetti(confettiEl, isNew ? 60 : 30);
+  if (isNew) {
+    window.clearTimeout(recordTimer);
+    recordTimer = window.setTimeout(() => sfx.newRecord(), 850);
   }
 }
 
-function updateLoaderProgress(modelName: string, p: InitProgress) {
-  const { stage, loaded, total } = p.load;
-  if (stage === 'download') {
-    const mbDone = (loaded / 1_048_576).toFixed(1);
-    const mbTotal = (total / 1_048_576).toFixed(1);
-    const pct = Math.min(82, Math.max(8, Math.round((loaded / Math.max(1, total)) * 82)));
-    loaderText.textContent = `正在下载${modelName}（${mbDone} / ${mbTotal} MB）…`;
-    loaderFill.style.width = `${pct}%`;
-  } else if (stage === 'init') {
-    loaderText.textContent = p.cameraReady
-      ? `正在初始化${modelName}…`
-      : '正在打开前置摄像头…';
-    loaderFill.style.width = '90%';
-  } else if (stage === 'ready' && !p.cameraReady) {
-    loaderText.textContent = '正在请求前置摄像头权限…';
-    loaderFill.style.width = '94%';
-  } else if (stage === 'ready' && p.cameraReady) {
-    loaderText.textContent = '准备就绪！';
-    loaderFill.style.width = '100%';
-  }
+function beginRound() {
+  screenState = 'playing';
+  lastHudTime = -1;
+  lastHudScore = 0;
+  hudEl.style.display = 'flex';
+  fpsTagEl.style.display = 'block';
+  sfx.go();
 }
 
 async function startGame(id: GameId) {
+  if (screenState === 'loading' || screenState === 'playing') return;
   sfx.unlock();
   sfx.tap();
 
@@ -378,37 +263,39 @@ async function startGame(id: GameId) {
 
   const sensor = GAME_SENSOR[id];
   const needFace = sensor === 'face';
+  const modelName = needFace ? '脸部识别' : '小手识别';
   const needInit = !camera.ready || (needFace ? !faceEngine.ready : !handEngine.ready);
+  const gameCtor = GAME_MODULES[id]();
 
+  let Ctor: GameCtor;
   if (needInit) {
     screenState = 'loading';
+    stepModelLabel.textContent = needFace ? '😜 脸部识别' : '🧠 小手识别';
     loaderEl.classList.remove('hidden');
-    loaderSpinner.style.display = 'block';
-    loaderBar.style.display = 'block';
+    loaderSteps.style.display = '';
+    loaderBar.style.display = '';
+    loaderPct.style.display = '';
     loaderError.style.display = 'none';
     loaderBack.style.display = 'none';
-    loaderFill.style.width = '8%';
-    loaderText.textContent = needFace ? '正在准备脸部 AI 模型…' : '正在准备手势 AI 模型…';
+    sfx.whoosh();
     sfx.loaderStart();
 
     try {
-      if (needFace) {
-        await faceEngine.init(camera, videoEl, (p) => updateLoaderProgress('脸部模型', p));
-      } else {
-        await handEngine.init(camera, videoEl, (p) => updateLoaderProgress('手势模型', p));
-      }
+      const initTask = needFace
+        ? faceEngine.init(camera, videoEl, (p) => renderLoader(modelName, p))
+        : handEngine.init(camera, videoEl, (p) => renderLoader(modelName, p));
+      [, Ctor] = await Promise.all([initTask, gameCtor]);
     } catch (err) {
-      loaderSpinner.style.display = 'none';
-      loaderBar.style.display = 'none';
-      loaderText.textContent = '启动失败';
-      loaderError.style.display = 'block';
-      loaderError.textContent = err instanceof Error ? err.message : String(err);
-      loaderBack.style.display = 'block';
+      showLoaderError(err);
       return;
     }
-
-    loaderEl.classList.add('hidden');
+    if (screenState !== 'loading') return;
     sfx.ready();
+    loaderEl.classList.add('hidden');
+  } else {
+    screenState = 'loading';
+    Ctor = await gameCtor;
+    if (screenState !== 'loading') return;
   }
 
   if (!needFace) {
@@ -416,16 +303,13 @@ async function startGame(id: GameId) {
   }
 
   videoEl.classList.remove('hidden');
-  activeGame = createGame(id);
-  lastCountdownTick = 99;
-  screenState = 'playing';
-  hudEl.style.display = 'flex';
-  fpsTagEl.style.display = 'block';
-  sfx.go();
+  activeGame = new Ctor(onFinish);
+  beginRound();
 }
 
 function goLobby() {
   sfx.back();
+  window.clearTimeout(recordTimer);
   screenState = 'lobby';
   activeGame = null;
   hudEl.style.display = 'none';
@@ -436,49 +320,50 @@ function goLobby() {
   ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 }
 
-// Button bindings
+// ---- Bindings ----
+document.addEventListener('pointerup', () => sfx.unlock(), { passive: true });
+
 document.querySelectorAll<HTMLButtonElement>('.game-card').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const id = btn.dataset.game as GameId;
-    void startGame(id);
-  });
+  btn.addEventListener('click', () => void startGame(btn.dataset.game as GameId));
 });
 
-document.getElementById('btn-home')!.addEventListener('click', goLobby);
-document.getElementById('res-home')!.addEventListener('click', goLobby);
+$('btn-home').addEventListener('click', goLobby);
+$('res-home').addEventListener('click', goLobby);
 loaderBack.addEventListener('click', goLobby);
 
-document.getElementById('res-again')!.addEventListener('click', () => {
+$('res-again').addEventListener('click', () => {
   if (!activeGame) return;
+  window.clearTimeout(recordTimer);
   sfx.again();
   resultEl.classList.add('hidden');
-  lastCountdownTick = 99;
   activeGame.reset();
-  screenState = 'playing';
+  beginRound();
 });
 
-const btnDim = document.getElementById('btn-dim')!;
-btnDim.addEventListener('click', () => {
-  sfx.toggle(!videoEl.classList.contains('dimmed'));
+$('btn-dim').addEventListener('click', () => {
+  sfx.click();
   videoEl.classList.toggle('dimmed');
 });
 
-const btnMute = document.getElementById('btn-mute')!;
+const btnMute = $('btn-mute');
 btnMute.addEventListener('click', () => {
-  if (!sfx.muted) sfx.toggle(false);
-  sfx.muted = !sfx.muted;
+  if (sfx.muted) {
+    sfx.muted = false;
+    sfx.toggle(true);
+  } else {
+    sfx.toggle(false);
+    sfx.muted = true;
+  }
   btnMute.textContent = sfx.muted ? '🔇' : '🔊';
-  if (!sfx.muted) sfx.toggle(true);
 });
 
-// Forward canvas taps to interactive in-game controls (e.g., NoBlink 2-in-1 switcher)
 canvasEl.addEventListener('pointerdown', (e) => {
   if (screenState !== 'playing' || !activeGame?.onTap) return;
   const rect = canvasEl.getBoundingClientRect();
   activeGame.onTap(e.clientX - rect.left, e.clientY - rect.top, vw, vh);
 });
 
-// Main 60fps loop
+// ---- Main loop ----
 function loop(ts: number) {
   requestAnimationFrame(loop);
   const dt = lastFrameTime ? Math.min(0.05, Math.max(0.001, (ts - lastFrameTime) / 1000)) : 1 / 60;
@@ -499,13 +384,24 @@ function loop(ts: number) {
   activeGame.draw(ctx, vw, vh, frame);
 
   const hud = activeGame.getHud();
-  hudScoreEl.textContent = hud.scoreText ?? `${hud.score}`;
-  hudTimerEl.textContent = hud.timerText ?? `⏱ ${hud.timeLeft}`;
-  hudTimerEl.classList.toggle('urgent', hud.urgent ?? hud.timeLeft <= 8);
+  if (hud.score !== lastHudScore) {
+    if (hud.score > lastHudScore) {
+      hudScoreEl.classList.remove('bump');
+      void hudScoreEl.offsetWidth;
+      hudScoreEl.classList.add('bump');
+    }
+    lastHudScore = hud.score;
+  }
+  hudScoreEl.textContent = hud.scoreText ?? `⭐ ${hud.score}`;
 
-  if (!hud.timerText && hud.timeLeft <= 5 && hud.timeLeft > 0 && hud.timeLeft < lastCountdownTick) {
-    lastCountdownTick = hud.timeLeft;
-    sfx.tick(hud.timeLeft);
+  if (hud.timerText) {
+    hudTimerEl.textContent = hud.timerText;
+    hudTimerEl.classList.toggle('urgent', Boolean(hud.urgent));
+  } else if (hud.timeLeft !== lastHudTime) {
+    if (lastHudTime !== -1 && hud.timeLeft > 0 && hud.timeLeft <= 5) sfx.tick(hud.timeLeft);
+    lastHudTime = hud.timeLeft;
+    hudTimerEl.textContent = `⏱ ${hud.timeLeft}`;
+    hudTimerEl.classList.toggle('urgent', hud.urgent ?? hud.timeLeft <= 5);
   }
 
   const stats = isFace ? faceEngine.stats : handEngine.stats;
