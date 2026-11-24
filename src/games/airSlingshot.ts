@@ -1,7 +1,8 @@
 import { sfx } from '../audio/sfx';
-import { drawHandSkeleton, type HandState, type Point2D } from '../vision/gestures';
+import { drawHandSkeleton, type Point2D } from '../vision/gestures';
 import { FxSystem } from './particles';
-import type { GameController, GameOverSummary } from './types';
+import { cartoonBall, CANDY, EMOJI_FONT, INK, stickerPill } from './theme';
+import type { GameController, GameOverSummary, SensorFrame } from './types';
 
 interface Target {
   id: number;
@@ -31,16 +32,17 @@ interface Orb {
 const ROUND_SECONDS = 60;
 const GRAVITY = 880;
 const TARGET_PALETTE = [
-  { color: '#ff6b6b', emoji: '🎯', points: 10 },
-  { color: '#38bdf8', emoji: '🫧', points: 10 },
-  { color: '#4ade80', emoji: '🍈', points: 15 },
-  { color: '#fb923c', emoji: '🍊', points: 15 },
-  { color: '#c084fc', emoji: '👾', points: 20 },
+  { color: CANDY.coral, emoji: '🎯', points: 10 },
+  { color: CANDY.sky, emoji: '🫧', points: 10 },
+  { color: CANDY.mint, emoji: '🍈', points: 15 },
+  { color: '#ff9f43', emoji: '🍊', points: 15 },
+  { color: CANDY.grape, emoji: '👾', points: 20 },
 ];
 
 export class AirSlingshotGame implements GameController {
   readonly id = 'air-slingshot';
   readonly name = '空气弹弓';
+  readonly sensor = 'hand1' as const;
 
   private fx = new FxSystem();
   private score = 0;
@@ -126,7 +128,7 @@ export class AirSlingshotGame implements GameController {
         vx: (fromLeft ? 1 : -1) * (baseSpeed * 1.25),
         vy: 0,
         r: 26,
-        color: '#facc15',
+        color: CANDY.sun,
         emoji: '⭐',
         points: 35,
         wobble: Math.random() * Math.PI * 2,
@@ -141,7 +143,7 @@ export class AirSlingshotGame implements GameController {
         vx: (fromLeft ? 1 : -1) * (baseSpeed * 0.85),
         vy: 0,
         r: 25,
-        color: '#ef4444',
+        color: '#ff4d5e',
         emoji: '💣',
         points: -20,
         wobble: Math.random() * Math.PI * 2,
@@ -164,7 +166,8 @@ export class AirSlingshotGame implements GameController {
     }
   }
 
-  update(dt: number, w: number, h: number, hand: HandState) {
+  update(dt: number, w: number, h: number, frame: SensorFrame) {
+    const { hand } = frame;
     this.fx.update(dt);
     if (this.finished) return;
 
@@ -292,9 +295,9 @@ export class AirSlingshotGame implements GameController {
           if (t.kind === 'bomb') {
             this.score = Math.max(0, this.score + t.points);
             this.combo = 0;
-            this.fx.burst(t.x, t.y, '#ef4444', 32, 420);
+            this.fx.burst(t.x, t.y, CANDY.coral, 32, 420);
             this.fx.shake(14, 0.3);
-            this.fx.popText(t.x, t.y, `${t.points} 💣`, '#ff6b6b', 30);
+            this.fx.popText(t.x, t.y, `${t.points} 💣`, CANDY.coral, 30);
             sfx.bomb();
             o.alive = false;
             break;
@@ -313,10 +316,15 @@ export class AirSlingshotGame implements GameController {
               t.x,
               t.y - 10,
               o.hits > 1 ? `穿透 +${gained}!` : `+${gained}`,
-              t.kind === 'star' ? '#facc15' : '#ffffff',
+              t.kind === 'star' ? CANDY.sun : CANDY.white,
               o.hits > 1 ? 30 : 26,
             );
             sfx.pop(this.combo);
+            if (t.kind === 'star') sfx.star();
+            if (this.combo === 5) {
+              sfx.fever();
+              this.fx.popText(w * 0.5, h * 0.3, '🔥 连击翻倍！', CANDY.sun, 28);
+            }
           }
         }
       }
@@ -325,34 +333,46 @@ export class AirSlingshotGame implements GameController {
       if (!o.alive || o.y > h + 60 || o.y < -260) {
         if (o.alive && o.hits === 0) {
           this.combo = 0;
+          sfx.whiff();
         }
         this.orbs.splice(i, 1);
       }
     }
   }
 
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, hand: HandState) {
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
+    const { hand } = frame;
     const shake = this.fx.getShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
     // 1. Subtle hand skeleton
-    drawHandSkeleton(ctx, hand, this.pulling ? '#facc15' : '#38bdf8', 0.45);
+    drawHandSkeleton(ctx, hand, this.pulling ? CANDY.sun : CANDY.sky, 0.55);
 
-    // 2. Targets
+    // 2. Targets: cream bubble, thick candy ring, ink outline
     for (const t of this.targets) {
       ctx.save();
       ctx.translate(t.x, t.y);
-      // Outer glow bubble
+      ctx.beginPath();
+      ctx.arc(0, 4, t.r, 0, Math.PI * 2);
+      ctx.fillStyle = INK;
+      ctx.fill();
       ctx.beginPath();
       ctx.arc(0, 0, t.r, 0, Math.PI * 2);
-      ctx.fillStyle = `${t.color}33`;
+      ctx.fillStyle = CANDY.cream;
       ctx.fill();
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 7;
       ctx.strokeStyle = t.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, t.r - 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = INK;
+      ctx.beginPath();
+      ctx.arc(0, 0, t.r, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.font = `${Math.round(t.r * 1.15)}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+      ctx.font = `${Math.round(t.r * 1.05)}px ${EMOJI_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(t.emoji, 0, 2);
@@ -372,6 +392,8 @@ export class AirSlingshotGame implements GameController {
       const { vx, vy, tension } = this.computeLaunchVel(anchor, pocket, maxPull);
       if (tension > 0.16 && vy < -120) {
         ctx.save();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = INK;
         for (let step = 1; step <= 14; step++) {
           const t = step * 0.048;
           let px = pocket.x + vx * t;
@@ -379,64 +401,62 @@ export class AirSlingshotGame implements GameController {
           // Mirror wall bounce preview
           if (px < 15) px = 30 - px;
           else if (px > w - 15) px = (w - 15) * 2 - px;
+          ctx.globalAlpha = Math.max(0.25, 1 - step * 0.055);
           ctx.beginPath();
-          ctx.arc(px, py, Math.max(2.5, 6 - step * 0.25), 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(250, 204, 21, ${Math.max(0.15, 0.9 - step * 0.055)})`;
+          ctx.arc(px, py, Math.max(3, 7 - step * 0.28), 0, Math.PI * 2);
+          ctx.fillStyle = step % 2 ? CANDY.white : CANDY.sun;
           ctx.fill();
+          ctx.stroke();
         }
         ctx.restore();
       }
     }
 
-    // Slingshot base Y-frame
+    // Slingshot base Y-frame: wooden stick with ink outline
     ctx.save();
-    ctx.strokeStyle = 'rgba(226, 232, 240, 0.72)';
-    ctx.lineWidth = 7;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(anchor.x, anchor.y + 52);
+    ctx.moveTo(anchor.x, anchor.y + 56);
     ctx.lineTo(anchor.x, anchor.y + 18);
     ctx.lineTo(leftFork.x, leftFork.y);
     ctx.moveTo(anchor.x, anchor.y + 18);
     ctx.lineTo(rightFork.x, rightFork.y);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 15;
+    ctx.stroke();
+    ctx.strokeStyle = CANDY.wood;
+    ctx.lineWidth = 9;
     ctx.stroke();
 
     // Elastic bands
-    ctx.strokeStyle = this.pulling ? '#facc15' : '#38bdf8';
-    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(leftFork.x, leftFork.y);
     ctx.lineTo(pocket.x, pocket.y);
     ctx.lineTo(rightFork.x, rightFork.y);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.strokeStyle = this.pulling ? CANDY.coral : CANDY.pink;
+    ctx.lineWidth = 4.5;
     ctx.stroke();
 
-    // Energy orb in slingshot pocket
-    ctx.beginPath();
-    ctx.arc(pocket.x, pocket.y, 15, 0, Math.PI * 2);
-    ctx.fillStyle = this.pulling ? '#fde047' : '#7dd3fc';
-    ctx.shadowColor = this.pulling ? '#facc15' : '#38bdf8';
-    ctx.shadowBlur = 16;
-    ctx.fill();
+    // Ball in slingshot pocket
+    cartoonBall(ctx, pocket.x, pocket.y, 15, this.pulling ? CANDY.sun : '#ffe08a');
     ctx.restore();
 
-    // 4. Flying orbs + glowing trails
+    // 4. Flying balls + candy trails
     for (const o of this.orbs) {
       ctx.save();
       for (let i = 0; i < o.trail.length; i++) {
         const pt = o.trail[i];
         const ratio = (i + 1) / o.trail.length;
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, o.r * ratio * 0.85, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(250, 204, 21, ${ratio * 0.45})`;
+        ctx.arc(pt.x, pt.y, o.r * ratio * 0.8, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 201, 60, ${ratio * 0.5})`;
         ctx.fill();
       }
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = '#facc15';
-      ctx.shadowBlur = 16;
-      ctx.fill();
+      cartoonBall(ctx, o.x, o.y, o.r, CANDY.sun);
       ctx.restore();
     }
 
@@ -446,12 +466,15 @@ export class AirSlingshotGame implements GameController {
       const r = this.pulling ? 18 : 26;
       ctx.beginPath();
       ctx.arc(hand.pinchPos.x, hand.pinchPos.y, r, 0, Math.PI * 2);
-      ctx.strokeStyle = this.pulling ? '#facc15' : '#38bdf8';
-      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.strokeStyle = this.pulling ? CANDY.sun : CANDY.white;
+      ctx.lineWidth = 4.5;
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(hand.pinchPos.x, hand.pinchPos.y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.arc(hand.pinchPos.x, hand.pinchPos.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = CANDY.coral;
       ctx.fill();
       ctx.restore();
     }
@@ -462,18 +485,7 @@ export class AirSlingshotGame implements GameController {
       : this.pulling
         ? '🎯 往回拉瞄准，松开手指发射！'
         : '🤏 捏合拇指和食指即可隔空拉弓';
-    ctx.save();
-    ctx.font = '800 14px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-    const tw = ctx.measureText(tip).width + 32;
-    ctx.beginPath();
-    ctx.roundRect(w / 2 - tw / 2, h - 66, tw, 34, 17);
-    ctx.fillStyle = this.pulling ? 'rgba(250, 204, 21, 0.9)' : 'rgba(15, 23, 42, 0.78)';
-    ctx.fill();
-    ctx.fillStyle = this.pulling ? '#090c16' : '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(tip, w / 2, h - 49);
-    ctx.restore();
+    stickerPill(ctx, w / 2, h - 52, tip, this.pulling ? CANDY.sun : CANDY.white, INK, 15);
 
     this.fx.draw(ctx);
     ctx.restore();

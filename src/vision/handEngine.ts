@@ -1,15 +1,22 @@
-import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import type { HandLandmarker, NormalizedLandmark } from '@mediapipe/tasks-vision';
+import { type CameraManager, getCoverTransform } from './camera';
 import { classifyHandGesture, type HandState, type Point2D } from './gestures';
 import { OneEuroFilterArray } from './oneEuro';
+import { createHandLandmarker, type DelegateKind, type VisionLoadState } from './visionAssets';
 
-export type DelegateKind = 'GPU' | 'CPU';
+export type { DelegateKind, VisionLoadState } from './visionAssets';
+
+export interface InitProgress {
+  cameraReady: boolean;
+  load: VisionLoadState;
+}
 
 export interface VisionStats {
   fps: number;
   delegate: DelegateKind;
 }
 
-const EMPTY_HAND: HandState = {
+export const EMPTY_HAND: HandState = {
   present: false,
   pts: [],
   palmPx: 1,
@@ -25,125 +32,118 @@ const EMPTY_HAND: HandState = {
 const PINCH_ON_RATIO = 0.36;
 const PINCH_OFF_RATIO = 0.48;
 
+interface HandTrackerSlot {
+  filter: OneEuroFilterArray;
+  rawBuf: Float32Array;
+  outBuf: Float32Array;
+  pinching: boolean;
+  lastSeenAt: number;
+  lastCenterX: number;
+  state: HandState;
+}
+
+function createSlot(): HandTrackerSlot {
+  return {
+    filter: new OneEuroFilterArray(42, 1.6, 5.2, 1.2),
+    rawBuf: new Float32Array(42),
+    outBuf: new Float32Array(42),
+    pinching: false,
+    lastSeenAt: 0,
+    lastCenterX: -1,
+    state: { ...EMPTY_HAND },
+  };
+}
+
 export class HandEngine {
   private landmarker: HandLandmarker | null = null;
   private video: HTMLVideoElement | null = null;
-  private stream: MediaStream | null = null;
-  private delegate: DelegateKind = 'GPU';
+  private numHands: 1 | 2 = 1;
 
-  private filter = new OneEuroFilterArray(42, 1.6, 5.2, 1.2);
-  private rawBuf = new Float32Array(42);
-  private outBuf = new Float32Array(42);
+  private slots: [HandTrackerSlot, HandTrackerSlot] = [createSlot(), createSlot()];
 
   private lastVideoTime = -1;
   private lastTs = 0;
-  private lastSeenAt = 0;
-  private pinching = false;
   private fpsTimes: number[] = [];
 
+  /** Primary hand (hands[0]), kept for backward compatibility with single-hand games. */
   public state: HandState = { ...EMPTY_HAND };
+  /** All currently tracked hands, sorted left-to-right by screen X. */
+  public hands: HandState[] = [];
   public stats: VisionStats = { fps: 0, delegate: 'GPU' };
   public ready = false;
+  public load: VisionLoadState = { stage: 'idle', loaded: 0, total: 1 };
 
+  private loadPromise: Promise<void> | null = null;
+  private loadListeners = new Set<(s: VisionLoadState) => void>();
+
+  onLoadChange(fn: (s: VisionLoadState) => void): () => void {
+    this.loadListeners.add(fn);
+    fn(this.load);
+    return () => this.loadListeners.delete(fn);
+  }
+
+  private setLoad(s: VisionLoadState) {
+    this.load = s;
+    this.loadListeners.forEach((fn) => fn(s));
+  }
+
+  /** Download + build the HandLandmarker without touching the camera. Safe to call repeatedly. */
+  preload(): Promise<void> {
+    if (!this.loadPromise) {
+      this.loadPromise = createHandLandmarker((s) => this.setLoad(s), this.numHands)
+        .then(({ landmarker, delegate }) => {
+          this.landmarker = landmarker;
+          this.stats.delegate = delegate;
+          this.setLoad({ ...this.load, stage: 'ready' });
+        })
+        .catch((err) => {
+          this.loadPromise = null;
+          this.setLoad({ ...this.load, stage: 'error' });
+          throw err;
+        });
+    }
+    return this.loadPromise;
+  }
+
+  /** Opens shared camera + ensures hand model is loaded in parallel. */
   async init(
+    camera: CameraManager,
     videoEl: HTMLVideoElement,
-    onProgress?: (label: string, pct: number) => void,
+    onProgress?: (p: InitProgress) => void,
   ): Promise<void> {
     this.video = videoEl;
+    let cameraReady = camera.ready;
+    const report = () => onProgress?.({ cameraReady, load: this.load });
+    const unsubscribe = this.onLoadChange(report);
 
-    if (!this.stream) {
-      onProgress?.('正在打开前置摄像头…', 15);
-      await this.openCamera(videoEl);
-    } else if (videoEl.srcObject !== this.stream) {
-      videoEl.srcObject = this.stream;
-      await videoEl.play().catch(() => undefined);
+    const camTask = (async () => {
+      await camera.ensureOpen(videoEl);
+      cameraReady = true;
+      report();
+    })();
+
+    try {
+      await Promise.all([camTask, this.preload()]);
+    } finally {
+      unsubscribe();
     }
-
-    if (!this.landmarker) {
-      onProgress?.('正在加载 AI 手势引擎（约 18MB，首次加载后离线缓存）…', 40);
-      const vision = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
-      onProgress?.('正在初始化手部识别模型…', 75);
-
-      const create = (delegate: DelegateKind) =>
-        HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: '/models/hand_landmarker.task',
-            delegate,
-          },
-          runningMode: 'VIDEO',
-          numHands: 1,
-          minHandDetectionConfidence: 0.48,
-          minHandPresenceConfidence: 0.48,
-          minTrackingConfidence: 0.48,
-        });
-
-      try {
-        this.landmarker = await create('GPU');
-        this.delegate = 'GPU';
-      } catch (err) {
-        console.warn('[HandEngine] GPU unavailable, falling back to CPU:', err);
-        this.landmarker = await create('CPU');
-        this.delegate = 'CPU';
-      }
-      this.stats.delegate = this.delegate;
-    }
-
-    onProgress?.('准备就绪！', 100);
     this.ready = true;
   }
 
-  private async openCamera(videoEl: HTMLVideoElement): Promise<void> {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('当前浏览器不支持摄像头，请用 Safari 或 Chrome 打开（需 HTTPS）。');
+  /** Switch dynamically between 1-hand and 2-hand tracking without reloading WASM/model. */
+  async setNumHands(num: 1 | 2): Promise<void> {
+    if (this.numHands === num) return;
+    this.numHands = num;
+    if (num === 1) {
+      this.clearSlot(this.slots[1]);
     }
-
-    // Request portrait-friendly resolution on mobile
-    const constraints: MediaStreamConstraints = {
-      audio: false,
-      video: {
-        facingMode: 'user',
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        frameRate: { ideal: 30 },
-      },
-    };
-
-    try {
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (e) {
-      const err = e as DOMException;
-      if (err.name === 'NotAllowedError') {
-        throw new Error('摄像头权限被拒绝，请在浏览器地址栏设置里允许使用摄像头后刷新。');
-      }
-      if (err.name === 'NotFoundError') {
-        throw new Error('未检测到可用摄像头。');
-      }
-      throw new Error(`无法打开摄像头：${err.message || err.name}`);
+    if (this.landmarker) {
+      await this.landmarker.setOptions({ numHands: num });
     }
-
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    videoEl.autoplay = true;
-    videoEl.srcObject = this.stream;
-
-    await new Promise<void>((resolve, reject) => {
-      const timer = window.setTimeout(() => resolve(), 3500);
-      const done = () => {
-        window.clearTimeout(timer);
-        resolve();
-      };
-      videoEl.addEventListener('loadeddata', done, { once: true });
-      videoEl.play().catch((err) => {
-        // iOS Safari sometimes resolves on next user gesture; keep going if readyState advances
-        console.warn('[HandEngine] video.play warning:', err);
-        if (videoEl.readyState >= 2) done();
-        else reject(new Error('摄像头视频流未能开始播放，请点一下屏幕重试。'));
-      });
-    });
   }
 
   /**
-   * Run inference if a fresh video frame has arrived and update screen-space HandState.
+   * Run inference if a fresh video frame has arrived and update screen-space hands.
    * Mirrors coordinates to exactly align with `<video style="object-fit: cover; transform: scaleX(-1)">`.
    */
   update(viewportW: number, viewportH: number): HandState {
@@ -155,10 +155,14 @@ export class HandEngine {
 
     const now = performance.now();
     if (video.currentTime === this.lastVideoTime) {
-      // Keep brief grace period if hand hasn't been updated yet
-      if (this.state.present && now - this.lastSeenAt > 350) {
-        this.clearHand();
+      let changed = false;
+      for (const slot of this.slots) {
+        if (slot.state.present && now - slot.lastSeenAt > 350) {
+          this.clearSlot(slot);
+          changed = true;
+        }
       }
+      if (changed) this.syncOutputs();
       return this.state;
     }
 
@@ -175,54 +179,125 @@ export class HandEngine {
       return this.state;
     }
 
-    // Track actual vision FPS
     this.fpsTimes.push(ts);
     while (this.fpsTimes.length && ts - this.fpsTimes[0] > 1000) {
       this.fpsTimes.shift();
     }
     this.stats.fps = this.fpsTimes.length;
 
-    const lm = result.landmarks?.[0];
-    if (!lm || lm.length < 21) {
-      if (now - this.lastSeenAt > 220) {
-        this.clearHand();
+    const detected = (result.landmarks ?? []).filter((lm) => lm && lm.length >= 21).slice(0, this.numHands);
+    if (detected.length === 0) {
+      for (const slot of this.slots) {
+        if (slot.state.present && now - slot.lastSeenAt > 220) {
+          this.clearSlot(slot);
+        }
       }
+      this.syncOutputs();
       return this.state;
     }
 
-    // Exact object-fit: cover + horizontal mirror mapping
-    const vw = video.videoWidth || 640;
-    const vh = video.videoHeight || 480;
-    const scale = Math.max(viewportW / vw, viewportH / vh);
-    const renderedW = vw * scale;
-    const renderedH = vh * scale;
-    const offsetX = (viewportW - renderedW) / 2;
-    const offsetY = (viewportH - renderedH) / 2;
+    const cover = getCoverTransform(video, viewportW, viewportH);
 
-    if (now - this.lastSeenAt > 300) {
-      this.filter.reset();
+    // Compute raw mirrored palm X for each detected hand so we match to filter slots consistently
+    const detItems = detected.map((lm) => {
+      const palmX =
+        cover.offsetX +
+        (1 - (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5) * cover.renderedW;
+      return { lm, palmX };
+    });
+
+    const assignedSlots = new Set<number>();
+
+    if (this.numHands === 1 || detItems.length === 1) {
+      const item = detItems[0];
+      // Pick closest active slot (or slot 0 if neither active)
+      let targetIdx = 0;
+      if (this.numHands === 2) {
+        const s0 = this.slots[0];
+        const s1 = this.slots[1];
+        if (s0.state.present && s1.state.present) {
+          targetIdx =
+            Math.abs(item.palmX - s0.lastCenterX) <= Math.abs(item.palmX - s1.lastCenterX) ? 0 : 1;
+        } else if (s1.state.present && !s0.state.present && Math.abs(item.palmX - s1.lastCenterX) < 160) {
+          targetIdx = 1;
+        }
+      }
+      this.updateSlot(this.slots[targetIdx], item.lm, item.palmX, cover, dtSec, now);
+      assignedSlots.add(targetIdx);
+    } else {
+      // 2 hands detected: choose assignment minimizing total screen-X jump from previous slots
+      const [d0, d1] = detItems;
+      const s0 = this.slots[0];
+      const s1 = this.slots[1];
+      let pairNormal = true;
+      if (s0.lastCenterX >= 0 && s1.lastCenterX >= 0) {
+        const costNormal =
+          Math.abs(d0.palmX - s0.lastCenterX) + Math.abs(d1.palmX - s1.lastCenterX);
+        const costSwap =
+          Math.abs(d0.palmX - s1.lastCenterX) + Math.abs(d1.palmX - s0.lastCenterX);
+        pairNormal = costNormal <= costSwap;
+      } else {
+        // Default: leftmost hand -> slot 0, rightmost hand -> slot 1
+        pairNormal = d0.palmX <= d1.palmX;
+      }
+
+      if (pairNormal) {
+        this.updateSlot(s0, d0.lm, d0.palmX, cover, dtSec, now);
+        this.updateSlot(s1, d1.lm, d1.palmX, cover, dtSec, now);
+      } else {
+        this.updateSlot(s0, d1.lm, d1.palmX, cover, dtSec, now);
+        this.updateSlot(s1, d0.lm, d0.palmX, cover, dtSec, now);
+      }
+      assignedSlots.add(0);
+      assignedSlots.add(1);
     }
-    this.lastSeenAt = now;
+
+    // Expire any unassigned slot past grace period
+    for (let idx = 0; idx < 2; idx++) {
+      if (!assignedSlots.has(idx)) {
+        const slot = this.slots[idx];
+        if (slot.state.present && now - slot.lastSeenAt > 220) {
+          this.clearSlot(slot);
+        }
+      }
+    }
+
+    this.syncOutputs();
+    return this.state;
+  }
+
+  private updateSlot(
+    slot: HandTrackerSlot,
+    lm: NormalizedLandmark[],
+    rawPalmX: number,
+    cover: { renderedW: number; renderedH: number; offsetX: number; offsetY: number },
+    dtSec: number,
+    now: number,
+  ) {
+    if (now - slot.lastSeenAt > 300) {
+      slot.filter.reset();
+    }
+    slot.lastSeenAt = now;
+    slot.lastCenterX = rawPalmX;
 
     for (let i = 0; i < 21; i++) {
-      this.rawBuf[i * 2] = offsetX + (1 - lm[i].x) * renderedW;
-      this.rawBuf[i * 2 + 1] = offsetY + lm[i].y * renderedH;
+      slot.rawBuf[i * 2] = cover.offsetX + (1 - lm[i].x) * cover.renderedW;
+      slot.rawBuf[i * 2 + 1] = cover.offsetY + lm[i].y * cover.renderedH;
     }
 
-    this.filter.filter(this.rawBuf, this.outBuf, dtSec);
+    slot.filter.filter(slot.rawBuf, slot.outBuf, dtSec);
 
     const pts: Point2D[] = new Array(21);
     for (let i = 0; i < 21; i++) {
-      pts[i] = { x: this.outBuf[i * 2], y: this.outBuf[i * 2 + 1] };
+      pts[i] = { x: slot.outBuf[i * 2], y: slot.outBuf[i * 2 + 1] };
     }
 
     const { gesture, fingers, palmPx, pinchRatio } = classifyHandGesture(pts);
 
-    // Hysteresis pinch state
-    if (!this.pinching && pinchRatio < PINCH_ON_RATIO) {
-      this.pinching = true;
-    } else if (this.pinching && pinchRatio > PINCH_OFF_RATIO) {
-      this.pinching = false;
+    if (!slot.pinching && pinchRatio < PINCH_ON_RATIO) {
+      slot.pinching = true;
+    } else if (slot.pinching && pinchRatio > PINCH_OFF_RATIO) {
+      slot.pinching = false;
     }
 
     const pinchPos: Point2D = {
@@ -235,7 +310,7 @@ export class HandEngine {
       y: (pts[0].y + pts[5].y + pts[9].y + pts[13].y + pts[17].y) / 5,
     };
 
-    this.state = {
+    slot.state = {
       present: true,
       pts,
       palmPx,
@@ -243,25 +318,32 @@ export class HandEngine {
       fingers,
       pinchPos,
       pinchRatio,
-      pinching: this.pinching,
+      pinching: slot.pinching,
       indexTip: pts[8],
       palmCenter,
     };
-
-    return this.state;
   }
 
-  private clearHand() {
-    this.pinching = false;
-    this.filter.reset();
-    this.state = { ...EMPTY_HAND };
+  private clearSlot(slot: HandTrackerSlot) {
+    slot.pinching = false;
+    slot.lastCenterX = -1;
+    slot.filter.reset();
+    slot.state = { ...EMPTY_HAND };
   }
 
-  stop() {
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    if (this.video) this.video.srcObject = null;
-    this.ready = false;
-    this.clearHand();
+  private syncOutputs() {
+    const active: HandState[] = [];
+    if (this.slots[0].state.present) active.push(this.slots[0].state);
+    if (this.numHands === 2 && this.slots[1].state.present) active.push(this.slots[1].state);
+    // Sort left-to-right by screen X
+    active.sort((a, b) => a.palmCenter.x - b.palmCenter.x);
+    this.hands = active;
+    this.state = active[0] ?? { ...EMPTY_HAND };
+  }
+
+  resetTracking() {
+    this.clearSlot(this.slots[0]);
+    this.clearSlot(this.slots[1]);
+    this.syncOutputs();
   }
 }

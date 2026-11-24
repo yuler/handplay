@@ -10,12 +10,12 @@ export interface GestureMeta {
 }
 
 export const GESTURE_LIST: GestureMeta[] = [
-  { id: 'fist', emoji: '✊', label: '石头', hint: '五指握拳', fingers: 0, color: '#ff6b6b' },
-  { id: 'point', emoji: '☝️', label: '一指', hint: '只伸食指', fingers: 1, color: '#38bdf8' },
-  { id: 'victory', emoji: '✌️', label: '剪刀', hint: '比个耶', fingers: 2, color: '#facc15' },
-  { id: 'open', emoji: '🖐️', label: '五指', hint: '手掌张开', fingers: 5, color: '#4ade80' },
-  { id: 'thumb', emoji: '👍', label: '点赞', hint: '大拇指朝上', fingers: 1, color: '#fb923c' },
-  { id: 'ok', emoji: '👌', label: 'OK', hint: '拇指食指捏圆', fingers: 3, color: '#c084fc' },
+  { id: 'fist', emoji: '✊', label: '石头', hint: '五指握拳', fingers: 0, color: '#ff7a6b' },
+  { id: 'point', emoji: '☝️', label: '一指', hint: '只伸食指', fingers: 1, color: '#5cc8ff' },
+  { id: 'victory', emoji: '✌️', label: '剪刀', hint: '比个耶', fingers: 2, color: '#ffc93c' },
+  { id: 'open', emoji: '🖐️', label: '五指', hint: '手掌张开', fingers: 5, color: '#3fd4a2' },
+  { id: 'thumb', emoji: '👍', label: '点赞', hint: '大拇指朝上', fingers: 1, color: '#ff9f43' },
+  { id: 'ok', emoji: '👌', label: 'OK', hint: '拇指食指捏圆', fingers: 3, color: '#9b7bff' },
 ];
 
 export const GESTURE_MAP: Record<Exclude<GestureId, 'none'>, GestureMeta> = Object.fromEntries(
@@ -136,36 +136,40 @@ export function classifyHandGesture(pts: Point2D[]): {
 export function drawHandSkeleton(
   ctx: CanvasRenderingContext2D,
   hand: HandState,
-  accentColor = '#38bdf8',
+  accentColor = '#5cc8ff',
   alpha = 0.72,
 ) {
   if (!hand.present || hand.pts.length < 21) return;
+  const ink = '#3a2d5c';
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Glow lines
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 3;
-  ctx.shadowColor = accentColor;
-  ctx.shadowBlur = 10;
+  // Cartoon bones: ink outline under a chunky colored stroke (no blur, cheap on phones)
   ctx.beginPath();
   for (const [a, b] of HAND_CONNECTIONS) {
     ctx.moveTo(hand.pts[a].x, hand.pts[a].y);
     ctx.lineTo(hand.pts[b].x, hand.pts[b].y);
   }
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 8;
+  ctx.stroke();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 4.5;
   ctx.stroke();
 
   // Joints & highlighted fingertips
-  ctx.shadowBlur = 0;
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = ink;
   for (let i = 0; i < 21; i++) {
     const p = hand.pts[i];
     const isTip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, isTip ? 5.5 : 3, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, isTip ? 6.5 : 3.5, 0, Math.PI * 2);
     ctx.fillStyle = isTip ? '#ffffff' : accentColor;
     ctx.fill();
+    if (isTip) ctx.stroke();
   }
   ctx.restore();
 }

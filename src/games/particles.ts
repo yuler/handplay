@@ -1,3 +1,5 @@
+import { font, INK } from './theme';
+
 export interface Particle {
   x: number;
   y: number;
@@ -173,9 +175,10 @@ export class FxSystem {
       ctx.globalAlpha = alpha;
       ctx.translate(t.x, t.y);
       ctx.scale(scale, scale);
-      ctx.font = `900 ${t.size}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(9, 12, 22, 0.88)';
+      ctx.font = font(900, t.size);
+      ctx.lineWidth = 6;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = INK;
       ctx.strokeText(t.text, 0, 0);
       ctx.fillStyle = t.color;
       ctx.fillText(t.text, 0, 0);
