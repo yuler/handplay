@@ -13,18 +13,24 @@ const DEFAULT_BEST: Record<GameId, number> = {
   'gesture-rush': 0,
   'air-slingshot': 0,
   'finger-rune': 0,
+  'kitty-chase': 0,
   'mouth-munch': 0,
   'no-blink': 0,
+  'animal-face': 0,
   'dual-hand': 0,
+  'bubble-pop': 0,
 };
 
 const GAME_SENSOR: Record<GameId, SensorMode> = {
   'gesture-rush': 'hand1',
   'air-slingshot': 'hand1',
   'finger-rune': 'hand1',
+  'kitty-chase': 'hand1',
   'mouth-munch': 'face',
   'no-blink': 'face',
+  'animal-face': 'face',
   'dual-hand': 'hand2',
+  'bubble-pop': 'hand2',
 };
 
 function loadBest(): Record<GameId, number> {
@@ -58,9 +64,12 @@ const GAME_MODULES: Record<GameId, () => Promise<GameCtor>> = {
   'gesture-rush': () => import('./games/gestureRush').then((m) => m.GestureRushGame),
   'air-slingshot': () => import('./games/airSlingshot').then((m) => m.AirSlingshotGame),
   'finger-rune': () => import('./games/fingerRune').then((m) => m.FingerRuneGame),
+  'kitty-chase': () => import('./games/kittyChase').then((m) => m.KittyChaseGame),
   'mouth-munch': () => import('./games/mouthMunch').then((m) => m.MouthMunchGame),
   'no-blink': () => import('./games/noBlink').then((m) => m.NoBlinkGame),
+  'animal-face': () => import('./games/animalFace').then((m) => m.AnimalFaceGame),
   'dual-hand': () => import('./games/dualHand').then((m) => m.DualHandGame),
+  'bubble-pop': () => import('./games/bubblePop').then((m) => m.BubblePopGame),
 };
 
 const app = document.getElementById('app')!;
@@ -226,6 +235,7 @@ function onFinish(summary: GameOverSummary) {
     resSnapshot.src = summary.snapshotUrl;
     resDownload.href = summary.snapshotUrl;
     resDownload.download = summary.snapshotFilename ?? 'handplay-snapshot.jpg';
+    resDownload.textContent = summary.snapshotLabel ?? '📸 保存破功照';
     resSnapshotWrap.style.display = 'flex';
   } else {
     resSnapshotWrap.style.display = 'none';

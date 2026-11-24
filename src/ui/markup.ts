@@ -40,7 +40,7 @@ export const APP_HTML = `
       <div class="brand">
         ${mascotSvg('wave')}
         <h1>手手玩</h1>
-        <p class="brand-sub">HandPlay · 手势 + 脸部 6 款隔空体感小游戏</p>
+        <p class="brand-sub">HandPlay · 手势 + 脸部 9 款隔空体感小游戏</p>
       </div>
 
       <div id="prefetch-chip" class="prefetch-chip">🧠 正在准备小手识别…</div>
@@ -49,6 +49,20 @@ export const APP_HTML = `
         <div class="section-group">
           <div class="section-label">✋ 单手隔空玩</div>
           <div class="card-list">
+            <button class="game-card kitty" data-game="kitty-chase">
+              <span id="best-kitty-chase" class="best-sticker">✨ 来试试</span>
+              <div class="game-icon">🐱</div>
+              <div class="game-meta">
+                <h2>小花猫逗猫乐</h2>
+                <p>挥手变出羽毛逗猫棒，逗三花小花猫抓鱼扑蝴蝶！摸摸猫头还能双倍得分～</p>
+                <div class="game-tags">
+                  <span class="mini-tag sensor">✋ 单手</span>
+                  <span class="mini-tag">⏱ 50 秒</span>
+                  <span class="mini-tag">🐱 摸头双倍</span>
+                </div>
+              </div>
+            </button>
+
             <button class="game-card rush" data-game="gesture-rush">
               <span id="best-gesture-rush" class="best-sticker">✨ 来试试</span>
               <div class="game-icon">✌️</div>
@@ -96,6 +110,20 @@ export const APP_HTML = `
         <div class="section-group">
           <div class="section-label">😜 完全解放双手（脸部体感）</div>
           <div class="card-list">
+            <button class="game-card animal" data-game="animal-face">
+              <span id="best-animal-face" class="best-sticker">✨ 来试试</span>
+              <div class="game-icon">🎭</div>
+              <div class="game-meta">
+                <h2>萌宠变脸秀</h2>
+                <p>学小狮子张大嘴、小河豚鼓腮、小狗歪头！脸上实时戴萌宠贴纸还能留念拍照～</p>
+                <div class="game-tags">
+                  <span class="mini-tag sensor">😜 纯脸部</span>
+                  <span class="mini-tag">⏱ 45 秒</span>
+                  <span class="mini-tag">📸 变身纪念照</span>
+                </div>
+              </div>
+            </button>
+
             <button class="game-card munch" data-game="mouth-munch">
               <span id="best-mouth-munch" class="best-sticker">✨ 来试试</span>
               <div class="game-icon">😮</div>
@@ -129,6 +157,20 @@ export const APP_HTML = `
         <div class="section-group">
           <div class="section-label">🙌 桌面支架挑战（双手同屏）</div>
           <div class="card-list">
+            <button class="game-card bubble" data-game="bubble-pop">
+              <span id="best-bubble-pop" class="best-sticker">✨ 来试试</span>
+              <div class="game-icon">🫧</div>
+              <div class="game-meta">
+                <h2>彩虹泡泡乐团</h2>
+                <p>伸手戳爆彩虹泡泡弹音乐，双手齐拍黄金大泡泡！单手双手或亲子同屏都能玩～</p>
+                <div class="game-tags">
+                  <span class="mini-tag sensor">🙌 双手 / 亲子</span>
+                  <span class="mini-tag">⏱ 50 秒</span>
+                  <span class="mini-tag">🎵 音乐泡泡</span>
+                </div>
+              </div>
+            </button>
+
             <button class="game-card dual" data-game="dual-hand">
               <span id="best-dual-hand" class="best-sticker">✨ 来试试</span>
               <div class="game-icon">🙌</div>

@@ -5,9 +5,12 @@ export type GameId =
   | 'gesture-rush'
   | 'air-slingshot'
   | 'finger-rune'
+  | 'kitty-chase'
   | 'mouth-munch'
   | 'no-blink'
-  | 'dual-hand';
+  | 'animal-face'
+  | 'dual-hand'
+  | 'bubble-pop';
 
 export type SensorMode = 'hand1' | 'hand2' | 'face';
 
@@ -35,6 +38,7 @@ export interface GameOverSummary {
   unit: string;
   snapshotUrl?: string;
   snapshotFilename?: string;
+  snapshotLabel?: string;
   stats: Array<{ label: string; value: string }>;
 }
 
