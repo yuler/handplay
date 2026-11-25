@@ -47,6 +47,11 @@ export interface HandState {
   palmCenter: Point2D;
   /** Increments every time a hand is (re)acquired; strokes must not connect across tracks */
   track?: number;
+  /**
+   * Increments once per new camera frame, even when the landmarks do not move.
+   * Render ticks that reuse the same video frame keep the previous value.
+   */
+  sample: number;
   /** Stable screen side label, only reassigned when a hand is newly acquired */
   side?: 'left' | 'right';
 }

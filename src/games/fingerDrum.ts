@@ -31,7 +31,9 @@ export class FingerDrumGame implements GameController {
   private drums: Drum[] = [];
   private prev: Point2D | null = null;
   private prevTrack = -1;
-  /** Seconds since the last fresh camera sample, skipping reused positions. */
+  /** Last `hand.sample` consumed. Still frames advance this; reused render ticks do not. */
+  private lastSample = -1;
+  /** Render time since `lastSample`, so a pause is not part of the next tap's velocity. */
   private freshFor = 0;
   private opened = false;
 
@@ -47,6 +49,7 @@ export class FingerDrumGame implements GameController {
     this.drums = [];
     this.prev = null;
     this.prevTrack = -1;
+    this.lastSample = -1;
     this.freshFor = 0;
     this.opened = false;
   }
@@ -68,6 +71,7 @@ export class FingerDrumGame implements GameController {
     if (!hand.present) {
       this.prev = null;
       this.prevTrack = -1;
+      this.lastSample = -1;
       this.freshFor = 0;
       this.combo = 0;
       return;
@@ -77,17 +81,22 @@ export class FingerDrumGame implements GameController {
     if (!this.prev || track !== this.prevTrack) {
       this.prev = { x: tip.x, y: tip.y };
       this.prevTrack = track;
+      this.lastSample = hand.sample;
       this.freshFor = 0;
       return;
     }
+    if (hand.sample === this.lastSample) {
+      this.freshFor += dt;
+      return;
+    }
+    const elapsed = this.freshFor + dt;
     const dy = tip.y - this.prev.y;
     const moved = dist(this.prev.x, this.prev.y, tip.x, tip.y);
-    this.freshFor += dt;
-    if (moved < 1) return;
-    const jumped = moved > Math.min(w, h) * 0.7;
-    const speed = dy / Math.max(this.freshFor, 0.001);
     this.prev = { x: tip.x, y: tip.y };
+    this.lastSample = hand.sample;
     this.freshFor = 0;
+    const jumped = moved > Math.min(w, h) * 0.7;
+    const speed = dy / Math.max(elapsed, 0.001);
     if (jumped || speed < DRUM_HIT_SPEED) return;
     const y = h * DRUM_Y;
     for (const drum of this.drums) {

@@ -130,8 +130,8 @@ scripts.push(play('finger-firework', sparkSteps));
 
 scripts.push(
   play('finger-drum', [
-    { hand: handAt(W / 2, H * DRUM_Y - 80) },
-    { hand: handAt(W / 2, H * DRUM_Y + 6) },
+    { hand: handAt(W / 2, H * DRUM_Y - 80, { sample: 1 }) },
+    { hand: handAt(W / 2, H * DRUM_Y + 6, { sample: 2 }) },
   ]),
 );
 
@@ -169,13 +169,15 @@ async function replay(
   const renderDt = 1 / 60;
   const cameraDt = 1 / cameraHz;
   let sample = at(0);
-  let nextSample = 0;
+  let sampleId = 1;
+  let nextSample = cameraDt;
   for (let t = 0; t < duration - 1e-8; t += renderDt) {
     if (t + 1e-6 >= nextSample) {
       sample = at(t);
+      sampleId++;
       nextSample += cameraDt;
     }
-    const posed = handAt(sample.x, sample.y, { track: sample.track ?? 1 });
+    const posed = handAt(sample.x, sample.y, { track: sample.track ?? 1, sample: sampleId });
     game.update(renderDt, W, H, frame(posed, { ...EMPTY_FACE }));
   }
   return game.getHud().score;
@@ -212,6 +214,32 @@ const motion = (async () => {
     if (score <= 0) throw new Error(`drum missed a 1000px/s tap at ${cameraHz}fps camera`);
   }
   console.log('ok  drum speed at 30fps and 60fps');
+
+  for (const cameraHz of [30, 60]) {
+    for (const holdSec of [0, 1]) {
+      const game = await loadGame('finger-drum');
+      game.reset();
+      const renderDt = 1 / 60;
+      const cameraDt = 1 / cameraHz;
+      const strokeSec = 0.05;
+      let sampleId = 1;
+      let nextSample = cameraDt;
+      let y = 450;
+      for (let t = 0; t < holdSec + strokeSec + cameraDt - 1e-8; t += renderDt) {
+        if (t + 1e-6 >= nextSample) {
+          sampleId++;
+          const traveled = t < holdSec ? 0 : Math.min(strokeSec, t - holdSec);
+          y = 450 + 1000 * traveled;
+          nextSample += cameraDt;
+        }
+        game.update(renderDt, W, H, frame(handAt(200, y, { track: 1, sample: sampleId }), { ...EMPTY_FACE }));
+      }
+      if (game.getHud().score <= 0) {
+        throw new Error(`drum missed a 50px tap at ${cameraHz}fps after a ${holdSec}s hold`);
+      }
+    }
+  }
+  console.log('ok  drum tap after hold at 30fps and 60fps');
 
   const drumJump = await loadGame('finger-drum');
   drumJump.reset();
