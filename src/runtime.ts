@@ -99,6 +99,15 @@ export class GameRuntime {
     this.setPrompt(null);
   }
 
+  /** Resume immediately without countdown (used when closing the in-game help card). */
+  resumeImmediate() {
+    if (!this.game || this.run !== 'hidden') return;
+    this.cancelCountdown();
+    this.run = 'running';
+    this.lastTs = 0;
+    this.missingFor = 0;
+  }
+
   /** Cartoon 3-2-1 before handing control back; game time does not advance meanwhile. */
   resumeWithCountdown() {
     if (!this.game) return;

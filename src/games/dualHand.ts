@@ -4,7 +4,7 @@ import {
   type GestureId,
   type HandState,
 } from '../vision/gestures';
-import { drawDebugSkeleton, drawHandCursor, SIDE_COLORS } from './cursor';
+import { drawHandLines, SIDE_COLORS } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -296,15 +296,9 @@ export class DualHandGame implements GameController {
     ctx.stroke();
     ctx.restore();
 
-    // One candy cursor per hand, colored by its stable side
-    if (leftHand) {
-      drawDebugSkeleton(ctx, leftHand, SIDE_COLORS.left);
-      drawHandCursor(ctx, leftHand.palmCenter, leftOk ? CANDY.mint : SIDE_COLORS.left, { radius: 15, emoji: leftOk ? '✓' : undefined });
-    }
-    if (rightHand) {
-      drawDebugSkeleton(ctx, rightHand, SIDE_COLORS.right);
-      drawHandCursor(ctx, rightHand.palmCenter, rightOk ? CANDY.mint : SIDE_COLORS.right, { radius: 15, emoji: rightOk ? '✓' : undefined });
-    }
+    // Independent hand skeletons, colored by stable side (mint when matched)
+    if (leftHand) drawHandLines(ctx, leftHand, leftOk ? CANDY.mint : SIDE_COLORS.left, 0.82);
+    if (rightHand) drawHandLines(ctx, rightHand, rightOk ? CANDY.mint : SIDE_COLORS.right, 0.82);
 
     // Fever aura
     if (fever) {

@@ -1,5 +1,5 @@
 import { sfx } from '../audio/sfx';
-import { EMOJI_FONT, font, INK, stickerPill } from './theme';
+import { CANDY, EMOJI_FONT, INK, stickerPill } from './theme';
 import type { GameOverSummary } from './types';
 
 export const ROUND_SECONDS = 45;
@@ -32,11 +32,9 @@ export class Round {
   }
 }
 
-export function sky(ctx: CanvasRenderingContext2D, w: number, h: number, top: string, bottom: string) {
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, top);
-  g.addColorStop(1, bottom);
-  ctx.fillStyle = g;
+/** Optional translucent atmospheric veil so the live camera feed always stays visible underneath. */
+export function cameraVeil(ctx: CanvasRenderingContext2D, w: number, h: number, color: string) {
+  ctx.fillStyle = color;
   ctx.fillRect(0, 0, w, h);
 }
 
@@ -47,16 +45,15 @@ export function emojiAt(ctx: CanvasRenderingContext2D, emoji: string, x: number,
   ctx.fillText(emoji, x, y);
 }
 
-export function hint(ctx: CanvasRenderingContext2D, w: number, text: string) {
-  stickerPill(ctx, w / 2, 78, text, '#fff6e5', INK, 16);
-}
-
-export function title(ctx: CanvasRenderingContext2D, w: number, text: string, color: string) {
-  ctx.font = font(900, 15);
-  ctx.fillStyle = color;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, w / 2, 36);
+/** Crisp bottom gameplay hint pill (never collides with top HUD bar). */
+export function bottomHint(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  text: string,
+  bg: string = CANDY.white,
+) {
+  stickerPill(ctx, w / 2, h - 42, text, bg, INK, 14);
 }
 
 export function endCard(

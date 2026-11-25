@@ -386,7 +386,7 @@ export class MouthMunchGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    drawFaceOverlay(ctx, face, face.jawOpen > JAW_OPEN_THRESH ? CANDY.mint : CANDY.sun);
+    drawFaceOverlay(ctx, face, face.jawOpen > JAW_OPEN_THRESH ? CANDY.mint : CANDY.sky, 0.45);
 
     if (this.flashAlpha > 0) {
       ctx.save();

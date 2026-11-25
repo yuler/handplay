@@ -1,6 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawHandCursor } from './cursor';
-import { dist, emojiAt, endCard, hint, Round, sky, title } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, dist, emojiAt, endCard, Round } from './kit';
 import { FxSystem } from './particles';
 import { CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -131,16 +131,16 @@ export class JellyPinchGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#fff0fb', '#e7ddff');
-    title(ctx, w, '轻轻捏住，放进同色桶', INK);
+    drawHandLines(ctx, frame.hand, this.held ? CANDY.sun : CANDY.pink, 0.65);
     this.baskets.forEach((b) => {
       ctx.beginPath();
-      ctx.ellipse(b.x, h * BASKET_Y + 16, 48, 16, 0, 0, Math.PI * 2);
-      ctx.fillStyle = b.color;
-      ctx.globalAlpha = 0.35;
+      ctx.ellipse(b.x, h * BASKET_Y + 6, 52, 26, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `${b.color}cc`;
       ctx.fill();
-      ctx.globalAlpha = 1;
-      emojiAt(ctx, b.emoji, b.x, h * BASKET_Y, 36);
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      emojiAt(ctx, b.emoji, b.x, h * BASKET_Y + 4, 36);
     });
     if (this.jelly) {
       const squeeze = this.held ? Math.max(0.55, frame.hand.pinchRatio) : 1;
@@ -151,16 +151,31 @@ export class JellyPinchGame implements GameController {
       ctx.arc(0, 0, 32, 0, Math.PI * 2);
       ctx.fillStyle = this.jelly.color;
       ctx.fill();
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3.5;
       ctx.strokeStyle = INK;
       ctx.stroke();
       ctx.restore();
-      emojiAt(ctx, this.jelly.emoji, this.jelly.x, this.jelly.y, 28);
+      emojiAt(ctx, this.jelly.emoji, this.jelly.x, this.jelly.y + 2, 28);
     }
-    if (!frame.hand.present) hint(ctx, w, '捏合抓住果冻，别捏太用力');
     if (frame.hand.present) {
-      drawHandCursor(ctx, frame.hand.pinchPos, CANDY.pink, { pinching: frame.hand.pinching });
+      drawHandCursor(ctx, frame.hand.pinchPos, this.held ? CANDY.sun : CANDY.pink, {
+        pinching: frame.hand.pinching,
+      });
     }
+    const nearBurst = this.held && frame.hand.present && frame.hand.pinchRatio < 0.2;
+    bottomHint(
+      ctx,
+      w,
+      h,
+      !frame.hand.present
+        ? '👋 举起手，轻轻捏住中间果冻拖进下方同色桶'
+        : nearBurst
+          ? '⚠️ 捏太紧啦！稍微放松一点，别挤爆！'
+          : this.held
+            ? '🍮 拖到下方同色水果桶里再松手！'
+            : '🤏 轻轻捏住果冻拖进同色桶（捏太紧会爆）',
+      nearBurst ? CANDY.coral : this.held ? CANDY.sun : CANDY.white,
+    );
     this.fx.draw(ctx);
   }
 

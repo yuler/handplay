@@ -1,6 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawHandCursor } from './cursor';
-import { dist, endCard, hint, Round, sky, title } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, dist, endCard, Round } from './kit';
 import { FxSystem } from './particles';
 import { cartoonBall, CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -146,8 +146,7 @@ export class PalmPongGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#e7fbff', '#d8f7ec');
-    title(ctx, w, '掌心把球弹回去', INK);
+    drawHandLines(ctx, frame.hand, CANDY.mint, 0.65);
     for (const brick of this.bricks) {
       if (!brick.alive) continue;
       ctx.fillStyle = brick.color;
@@ -159,15 +158,26 @@ export class PalmPongGame implements GameController {
       ctx.stroke();
     }
     cartoonBall(ctx, this.ball.x, this.ball.y, this.ball.r, CANDY.sun);
-    if (!frame.hand.present) hint(ctx, w, '张开手掌，接住小球');
     if (frame.hand.present) {
       ctx.beginPath();
       ctx.arc(frame.hand.palmCenter.x, frame.hand.palmCenter.y, 72, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(58,45,92,0.35)';
+      ctx.fillStyle = 'rgba(63, 212, 162, 0.14)';
+      ctx.fill();
+      ctx.strokeStyle = INK;
       ctx.lineWidth = 6;
       ctx.stroke();
-      drawHandCursor(ctx, frame.hand.palmCenter, CANDY.mint, { radius: 22 });
+      ctx.strokeStyle = CANDY.mint;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      drawHandCursor(ctx, frame.hand.palmCenter, CANDY.mint, { radius: 14 });
     }
+    bottomHint(
+      ctx,
+      w,
+      h,
+      frame.hand.present ? '🖐️ 用掌心圆圈把小球弹回去砸上方砖块！' : '👋 伸出手掌，接住落下的小球',
+      frame.hand.present ? CANDY.white : CANDY.sun,
+    );
     this.fx.draw(ctx);
   }
 

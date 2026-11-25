@@ -1,7 +1,7 @@
 import { sfx } from '../audio/sfx';
 import type { Point2D } from '../vision/gestures';
-import { drawHandCursor } from './cursor';
-import { dist, endCard, hint, Round, sky, title } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, dist, endCard, Round } from './kit';
 import { FxSystem } from './particles';
 import { CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -125,24 +125,30 @@ export class FingerDrumGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#fff6e0', '#ffd8a8');
-    title(ctx, w, '食指快速点下去', INK);
+    drawHandLines(ctx, frame.hand, CANDY.coral, 0.65);
     const y = h * DRUM_Y;
     for (const drum of this.drums) {
+      const hitGlow = drum.cool > 0.08;
       ctx.beginPath();
-      ctx.ellipse(drum.x, y + 18, 46, 16, 0, 0, Math.PI * 2);
-      ctx.fillStyle = drum.color;
+      ctx.ellipse(drum.x, y + 14, 48, 22, 0, 0, Math.PI * 2);
+      ctx.fillStyle = hitGlow ? CANDY.sun : drum.color;
       ctx.fill();
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3.5;
       ctx.strokeStyle = INK;
       ctx.stroke();
       ctx.font = '40px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(drum.emoji, drum.x, y - 8);
+      ctx.fillText(drum.emoji, drum.x, y - 6);
     }
-    if (!frame.hand.present) hint(ctx, w, '食指从上往下敲鼓');
-    if (frame.hand.present) drawHandCursor(ctx, frame.hand.indexTip, CANDY.coral, { emoji: '👇' });
+    if (frame.hand.present) drawHandCursor(ctx, frame.hand.indexTip, CANDY.coral, { radius: 11 });
+    bottomHint(
+      ctx,
+      w,
+      h,
+      frame.hand.present ? '☝️ 食指在鼓面上方快速向下点敲 🥁！' : '👋 伸出食指，从上往下快速敲击鼓面',
+      frame.hand.present ? CANDY.white : CANDY.sun,
+    );
     this.fx.draw(ctx);
   }
 

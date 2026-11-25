@@ -7,7 +7,7 @@ import type { GameController, GameId, GameOverSummary } from './games/types';
 import { currentState, parseRoute, playPath, pushRoute, replaceRoute } from './router';
 import { GameRuntime } from './runtime';
 import { popConfetti } from './ui/confetti';
-import { APP_HTML, tagsHtml } from './ui/markup';
+import { APP_HTML, howToHtml, tagsHtml } from './ui/markup';
 import { describeStartError } from './ui/startError';
 import { CameraManager } from './vision/camera';
 import { FaceEngine } from './vision/faceEngine';
@@ -34,6 +34,9 @@ const loaderFill = $('loader-fill');
 const loaderPct = $('loader-pct');
 const readyEl = $('ready');
 const readyCard = $('ready-card');
+const helpModalEl = $('help-modal');
+const helpCardEl = $('help-card');
+const tipBannerEl = $('tip-banner');
 const errorEl = $('cam-error');
 const errTitle = $('err-title');
 const errMsg = $('err-msg');
@@ -72,6 +75,8 @@ let currentId: GameId | null = null;
 /** Bumped on every navigation so stale async starts/resumes bail out */
 let navToken = 0;
 let recordTimer = 0;
+let tipTimer = 0;
+let helpOpen = false;
 let retryAction: (() => void) | null = null;
 
 refreshBestTags();
@@ -133,8 +138,47 @@ function renderLoader(modelName: string, cameraReady: boolean, load: VisionLoadS
         : '准备开玩啦！';
 }
 
+function hideTipBanner() {
+  window.clearTimeout(tipTimer);
+  tipTimer = 0;
+  tipBannerEl.classList.add('hidden');
+}
+
+function showTipBanner(meta: GameMeta) {
+  hideTipBanner();
+  tipBannerEl.textContent = `💡 玩法：${meta.tip}（点我看详解）`;
+  tipBannerEl.classList.remove('hidden');
+  tipTimer = window.setTimeout(hideTipBanner, 5500);
+}
+
+function openHelp() {
+  if (screen !== 'playing' || !currentId || helpOpen) return;
+  const meta = GAME_MAP[currentId];
+  helpOpen = true;
+  hideTipBanner();
+  runtime.pause();
+  helpCardEl.className = `ready-card ${meta.theme}`;
+  $('help-icon').textContent = meta.icon;
+  $('help-title').textContent = meta.title;
+  $('help-list').innerHTML = howToHtml(meta);
+  helpModalEl.classList.remove('hidden');
+  sfx.click();
+}
+
+function closeHelp() {
+  if (!helpOpen) return;
+  helpOpen = false;
+  helpModalEl.classList.add('hidden');
+  sfx.tap();
+  if (screen !== 'playing') return;
+  if (camera.live) runtime.resumeImmediate();
+  else void resumeAfterPause();
+}
+
 function hideOverlays() {
-  for (const el of [lobbyEl, readyEl, loaderEl, errorEl, resultEl]) el.classList.add('hidden');
+  helpOpen = false;
+  hideTipBanner();
+  for (const el of [lobbyEl, readyEl, helpModalEl, loaderEl, errorEl, resultEl]) el.classList.add('hidden');
 }
 
 function showStartError(err: unknown, retry: () => void) {
@@ -155,6 +199,9 @@ function showStartError(err: unknown, retry: () => void) {
 // ---- Result ----
 function onFinish(summary: GameOverSummary) {
   screen = 'result';
+  helpOpen = false;
+  hideTipBanner();
+  helpModalEl.classList.add('hidden');
   const isNew = saveBest(summary.gameId, summary.score) && summary.score > 0;
   refreshBestTags();
   resHeadline.textContent = isNew ? '新纪录！你最棒！' : summary.score > 0 ? '玩得真好！' : '再试一次吧！';
@@ -195,10 +242,12 @@ function resetVision() {
 
 function beginRound(game: GameController) {
   screen = 'playing';
+  helpOpen = false;
   resetVision();
   videoEl.classList.remove('hidden');
   hudEl.style.display = 'flex';
   runtime.start(game);
+  showTipBanner(GAME_MAP[game.id]);
   sfx.go();
 }
 
@@ -326,6 +375,7 @@ function fillReadyCard(meta: GameMeta) {
   $('ready-icon').textContent = meta.icon;
   $('ready-title').textContent = meta.title;
   $('ready-desc').textContent = meta.desc;
+  $('ready-howto').innerHTML = howToHtml(meta);
   $('ready-tags').innerHTML = tagsHtml(meta);
 }
 
@@ -377,7 +427,7 @@ function onHidden() {
 }
 
 function onVisible() {
-  if (screen === 'playing' && runtime.paused) {
+  if (screen === 'playing' && runtime.paused && !helpOpen) {
     sfx.unlock();
     void resumeAfterPause();
   }
@@ -423,6 +473,10 @@ $('res-home').addEventListener('click', goHome);
 $('res-again').addEventListener('click', () => {
   if (screen === 'result') void restartGame();
 });
+
+$('btn-help').addEventListener('click', openHelp);
+tipBannerEl.addEventListener('click', openHelp);
+$('help-close').addEventListener('click', closeHelp);
 
 $('btn-dim').addEventListener('click', () => {
   sfx.click();

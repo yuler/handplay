@@ -4,6 +4,10 @@ export function tagsHtml(g: GameMeta): string {
   return [`<span class="mini-tag sensor">${g.sensorTag}</span>`, ...g.tags.map((t) => `<span class="mini-tag">${t}</span>`)].join('');
 }
 
+export function howToHtml(g: GameMeta): string {
+  return g.howTo.map((line) => `<li>${line}</li>`).join('');
+}
+
 function gameCardHtml(g: GameMeta): string {
   return `
             <button class="game-card ${g.theme}" data-game="${g.id}">
@@ -59,10 +63,12 @@ export const APP_HTML = `
       </div>
       <div class="hud-group">
         <div id="hud-timer" class="pill timer">⏱ 45</div>
+        <button id="btn-help" class="icon-btn" aria-label="玩法提示">❓</button>
         <button id="btn-dim" class="icon-btn" aria-label="调暗摄像头画面">🌗</button>
         <button id="btn-mute" class="icon-btn" aria-label="静音开关">🔊</button>
       </div>
     </div>
+    <button id="tip-banner" class="tip-banner hidden" type="button" aria-label="查看完整玩法提示"></button>
     <div id="fps-tag" class="fps-tag" style="display:none"></div>
 
     <!-- Lobby -->
@@ -70,7 +76,7 @@ export const APP_HTML = `
       <div class="brand">
         ${mascotSvg('wave')}
         <h1>手手玩</h1>
-        <p class="brand-sub">HandPlay · 手势 + 脸部 9 款隔空体感小游戏</p>
+        <p class="brand-sub">HandPlay · 手势 + 脸部 ${GAMES.length} 款隔空体感小游戏</p>
       </div>
 
       <div id="prefetch-chip" class="prefetch-chip">🧠 正在准备小手识别…</div>
@@ -103,9 +109,21 @@ export const APP_HTML = `
         <div id="ready-icon" class="game-icon ready-icon"></div>
         <h2 id="ready-title" class="ready-title"></h2>
         <p id="ready-desc" class="ready-desc"></p>
+        <ul id="ready-howto" class="howto-list"></ul>
         <div id="ready-tags" class="game-tags ready-tags"></div>
         <button id="ready-start" class="btn btn-primary btn-start">▶ 开始</button>
         <button id="ready-home" class="btn-link">🏠 回大厅</button>
+      </div>
+    </div>
+
+    <!-- In-game How-to-Play Modal -->
+    <div id="help-modal" class="overlay soft hidden">
+      <div id="help-card" class="ready-card">
+        <div id="help-icon" class="game-icon ready-icon"></div>
+        <h2 id="help-title" class="ready-title"></h2>
+        <div class="howto-heading">💡 怎么玩</div>
+        <ul id="help-list" class="howto-list"></ul>
+        <button id="help-close" class="btn btn-primary btn-start">👌 知道了，继续玩</button>
       </div>
     </div>
 

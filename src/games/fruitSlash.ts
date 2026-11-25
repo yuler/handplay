@@ -1,7 +1,7 @@
 import { sfx } from '../audio/sfx';
 import type { Point2D } from '../vision/gestures';
-import { drawHandCursor } from './cursor';
-import { dist, endCard, hint, Round, segDist, sky, title } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, dist, endCard, Round, segDist } from './kit';
 import { FxSystem } from './particles';
 import { cartoonBall, CANDY, EMOJI_FONT, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -42,6 +42,7 @@ export class FruitSlashGame implements GameController {
   private best = 0;
   private sliced = 0;
   private fruits: Fruit[] = [];
+  private blade: Point2D[] = [];
   private prev: Point2D | null = null;
   private prevTrack = -1;
   private spawnIn = 0.8;
@@ -57,6 +58,7 @@ export class FruitSlashGame implements GameController {
     this.best = 0;
     this.sliced = 0;
     this.fruits = [];
+    this.blade = [];
     this.prev = null;
     this.prevTrack = -1;
     this.spawnIn = 0.8;
@@ -138,9 +140,13 @@ export class FruitSlashGame implements GameController {
     this.fruits = this.fruits.filter((f) => !f.cut && f.y < h + 80);
 
     if (frame.hand.present) {
+      if (!linked) this.blade = [];
+      this.blade.push({ x: tip.x, y: tip.y });
+      if (this.blade.length > 10) this.blade.shift();
       this.prev = { x: tip.x, y: tip.y };
       this.prevTrack = track;
     } else {
+      this.blade = [];
       this.prev = null;
       this.combo = 0;
     }
@@ -159,8 +165,24 @@ export class FruitSlashGame implements GameController {
     const shake = this.fx.getShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    sky(ctx, w, h, '#fff1e4', '#ffd0c2');
-    title(ctx, w, '食指划开水果', INK);
+    drawHandLines(ctx, frame.hand, CANDY.coral, 0.65);
+
+    if (this.blade.length > 1) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(this.blade[0].x, this.blade[0].y);
+      for (let i = 1; i < this.blade.length; i++) ctx.lineTo(this.blade[i].x, this.blade[i].y);
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 10;
+      ctx.stroke();
+      ctx.strokeStyle = CANDY.sun;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
     for (const f of this.fruits) {
       ctx.save();
       ctx.translate(f.x, f.y);
@@ -172,8 +194,14 @@ export class FruitSlashGame implements GameController {
       ctx.fillText(f.emoji, 0, 2);
       ctx.restore();
     }
-    if (!frame.hand.present) hint(ctx, w, '伸出食指，划开水果');
-    if (frame.hand.present) drawHandCursor(ctx, frame.hand.indexTip, CANDY.coral, { emoji: '🔪' });
+    if (frame.hand.present) drawHandCursor(ctx, frame.hand.indexTip, CANDY.coral, { radius: 11 });
+    bottomHint(
+      ctx,
+      w,
+      h,
+      frame.hand.present ? '☝️ 挥动食指划开水果，避开 💣 炸弹！' : '👋 举起一只手，用食指划开飞来的水果',
+      frame.hand.present ? CANDY.white : CANDY.sun,
+    );
     this.fx.draw(ctx);
     ctx.restore();
   }
