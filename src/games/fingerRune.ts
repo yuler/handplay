@@ -7,7 +7,7 @@ import {
   RUNE_MAP,
   type RuneId,
 } from '../vision/runeRecognizer';
-import { drawDebugSkeleton, drawHandCursor, HandLink } from './cursor';
+import { drawHandCursor, drawHandLines, HandLink } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -372,7 +372,7 @@ export class FingerRuneGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    drawDebugSkeleton(ctx, hand, this.drawing ? CANDY.sun : CANDY.sky);
+    drawHandLines(ctx, hand, this.drawing ? CANDY.sun : CANDY.sky, 0.55);
 
     if (this.flashAlpha > 0) {
       ctx.save();
@@ -472,8 +472,7 @@ export class FingerRuneGame implements GameController {
     // Magic wand cursor at index fingertip
     if (hand.present) {
       drawHandCursor(ctx, hand.indexTip, this.drawing ? CANDY.sun : CANDY.sky, {
-        radius: this.drawing ? 14 : 11,
-        mood: this.drawing ? 'excited' : 'idle',
+        radius: this.drawing ? 13 : 10,
       });
     }
 

@@ -1,6 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawHandCursor } from './cursor';
-import { dist, emojiAt, endCard, hint, Round, sky, title } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, dist, emojiAt, endCard, Round } from './kit';
 import { FxSystem } from './particles';
 import { CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -111,16 +111,44 @@ export class CoinMagnetGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#fff8dc', '#ffe1a8');
-    title(ctx, w, '张手吸住，握拳倒进罐', INK);
-    emojiAt(ctx, '🏺', w / 2, h * JAR_Y, 58);
-    for (const coin of this.coins) emojiAt(ctx, '🪙', coin.x, coin.y, 32);
-    if (!frame.hand.present) hint(ctx, w, '张开手掌吸金币');
-    if (frame.hand.present) {
-      drawHandCursor(ctx, frame.hand.palmCenter, CANDY.sun, {
-        emoji: frame.hand.gesture === 'fist' ? '✊' : '🧲',
-      });
+    const hand = frame.hand;
+    const heldCount = this.coins.filter((c) => c.held).length;
+    drawHandLines(ctx, hand, hand.gesture === 'open' ? CANDY.sun : CANDY.mint, 0.65);
+
+    ctx.beginPath();
+    ctx.arc(w / 2, h * JAR_Y, 44, 0, Math.PI * 2);
+    ctx.fillStyle = heldCount > 0 ? 'rgba(255, 243, 176, 0.85)' : 'rgba(255, 255, 255, 0.72)';
+    ctx.fill();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    emojiAt(ctx, '🏺', w / 2, h * JAR_Y + 2, 54);
+
+    for (const coin of this.coins) {
+      ctx.beginPath();
+      ctx.arc(coin.x, coin.y, 20, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 246, 229, 0.9)';
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      emojiAt(ctx, '🪙', coin.x, coin.y + 1, 28);
     }
+
+    if (hand.present) {
+      drawHandCursor(ctx, hand.palmCenter, hand.gesture === 'fist' ? CANDY.mint : CANDY.sun, { radius: 14 });
+    }
+    bottomHint(
+      ctx,
+      w,
+      h,
+      !hand.present
+        ? '👋 张开手掌 🖐️ 吸金币，再移到下方罐子旁握拳 ✊ 倒入'
+        : heldCount > 0
+          ? `🪙 已吸住 ${heldCount} 枚！移到下方 🏺 罐子旁握拳 ✊ 存进去`
+          : '🖐️ 张开五指靠近金币吸住它！',
+      heldCount > 0 ? CANDY.sun : CANDY.white,
+    );
     this.fx.draw(ctx);
   }
 

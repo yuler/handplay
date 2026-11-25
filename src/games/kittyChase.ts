@@ -1,5 +1,5 @@
 import { sfx } from '../audio/sfx';
-import { drawDebugSkeleton, HandLink } from './cursor';
+import { drawHandLines, HandLink } from './cursor';
 import { drawCalicoKitten, drawCatWand } from './kittyArt';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
@@ -441,7 +441,7 @@ export class KittyChaseGame implements GameController {
     ctx.stroke();
     ctx.restore();
 
-    drawDebugSkeleton(ctx, frame.hand, CANDY.sun);
+    drawHandLines(ctx, frame.hand, CANDY.sun, 0.45);
 
     // Draw puddles on the floor
     for (const p of this.puddles) {

@@ -1,5 +1,5 @@
 import { sfx } from '../audio/sfx';
-import { drawFaceSweat, type FaceState } from '../vision/faceEngine';
+import { drawFaceOverlay, type FaceState } from '../vision/faceEngine';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -418,7 +418,12 @@ export class NoBlinkGame implements GameController {
     const intensity = this.getIntensity(face);
     const thresh = this.mode === 'blink' ? BLINK_THRESH : SMILE_THRESH;
     const dangerRatio = Math.min(1, intensity / thresh);
-    drawFaceSweat(ctx, face, this.phase === 'surviving' ? dangerRatio : 0);
+    drawFaceOverlay(
+      ctx,
+      face,
+      dangerRatio > 0.72 ? CANDY.coral : dangerRatio > 0.45 ? CANDY.sun : CANDY.mint,
+      0.55,
+    );
 
     // Top 2-in-1 mode switcher
     this.drawModeTabs(ctx, w);

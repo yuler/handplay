@@ -55,13 +55,13 @@ button {
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
-  opacity: 0.85;
+  opacity: 1;
   transition: opacity 0.25s ease;
   pointer-events: none;
 }
 
 .cam-video.dimmed {
-  opacity: 0.38;
+  opacity: 0.45;
 }
 
 .cam-video.hidden {

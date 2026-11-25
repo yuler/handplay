@@ -1,5 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { emojiAt, endCard, hint, Round, sky, title } from './kit';
+import { drawFaceOverlay } from '../vision/faceEngine';
+import { bottomHint, emojiAt, endCard, Round } from './kit';
 import { FxSystem } from './particles';
 import { CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -85,27 +86,51 @@ export class MoleNodGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#e9f8d8', '#c8e7a0');
-    title(ctx, w, '转头选一列，点头敲下去', INK);
+    const face = frame.face;
+    drawFaceOverlay(ctx, face, face.pitch > 0.42 ? CANDY.coral : CANDY.sky, 0.55);
+
     const y = h * HOLE_Y;
     for (let i = 0; i < 3; i++) {
       const x = w * (0.2 + i * 0.3);
       ctx.beginPath();
-      ctx.ellipse(x, y + 20, 42, 16, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, y + 20, 44, 18, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#6b4a2e';
       ctx.fill();
-      if (this.moles[i]) emojiAt(ctx, '🐹', x, y - 16, 46);
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      if (this.moles[i]) {
+        ctx.beginPath();
+        ctx.arc(x, y - 14, 30, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 246, 229, 0.9)';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+        emojiAt(ctx, '🐹', x, y - 14, 42);
+      }
     }
-    const face = frame.face;
-    if (!face.present) hint(ctx, w, '看镜头，转头再点头');
-    else {
+    const laneNames = ['左列', '中列', '右列'];
+    if (face.present) {
       const lane = this.lane(face.yaw);
       const x = w * (0.2 + lane * 0.3);
       ctx.beginPath();
-      ctx.arc(x, y + 20, 48, 0, Math.PI * 2);
-      ctx.strokeStyle = face.pitch > 0.42 ? CANDY.coral : CANDY.sky;
-      ctx.lineWidth = 4;
+      ctx.arc(x, y + 8, 52, 0, Math.PI * 2);
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 8;
       ctx.stroke();
+      ctx.strokeStyle = face.pitch > 0.42 ? CANDY.coral : CANDY.sun;
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+      bottomHint(
+        ctx,
+        w,
+        h,
+        `🎯 已瞄准${laneNames[lane]} · 左右转头换列，点头 ⬇ 敲打地鼠！`,
+        face.pitch > 0.42 ? CANDY.coral : CANDY.white,
+      );
+    } else {
+      bottomHint(ctx, w, h, '🙂 把脸对准镜头，左右转头选地鼠再点头敲！', CANDY.sun);
     }
     this.fx.draw(ctx);
   }

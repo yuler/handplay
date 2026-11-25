@@ -1,6 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawHandCursor } from './cursor';
-import { dist, endCard, hint, Round, sky, title, emojiAt } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, dist, emojiAt, endCard, Round } from './kit';
 import { FxSystem } from './particles';
 import { CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -114,28 +114,56 @@ export class AirFishingGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#b7e7ff', '#7fd3c1');
-    title(ctx, w, '捏住鱼，拉进桶里', INK);
-    ctx.fillStyle = '#2f6f8f';
+    drawHandLines(ctx, frame.hand, frame.hand.pinching ? CANDY.sun : CANDY.sky, 0.65);
+
     ctx.beginPath();
-    ctx.ellipse(w / 2, h * BUCKET_Y + 10, 54, 18, 0, 0, Math.PI * 2);
+    ctx.ellipse(w / 2, h * BUCKET_Y + 10, 56, 20, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(92, 200, 255, 0.45)';
     ctx.fill();
-    emojiAt(ctx, '🪣', w / 2, h * BUCKET_Y - 8, 46);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    emojiAt(ctx, '🪣', w / 2, h * BUCKET_Y - 8, 48);
+
+    const anyHooked = this.fish.some((f) => f.hooked);
     for (const fish of this.fish) {
       if (fish.hooked && frame.hand.present) {
         ctx.beginPath();
         ctx.moveTo(frame.hand.pinchPos.x, frame.hand.pinchPos.y);
         ctx.lineTo(fish.x, fish.y);
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 7;
+        ctx.stroke();
         ctx.strokeStyle = CANDY.sun;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3.5;
         ctx.stroke();
       }
-      emojiAt(ctx, fish.emoji, fish.x, fish.y, 40);
+      ctx.beginPath();
+      ctx.arc(fish.x, fish.y, 28, 0, Math.PI * 2);
+      ctx.fillStyle = fish.hooked ? 'rgba(255, 243, 176, 0.92)' : 'rgba(255, 255, 255, 0.85)';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      emojiAt(ctx, fish.emoji, fish.x, fish.y + 2, 34);
     }
-    if (!frame.hand.present) hint(ctx, w, '捏住拇指和食指钓起鱼');
+
     if (frame.hand.present) {
-      drawHandCursor(ctx, frame.hand.pinchPos, CANDY.sky, { pinching: frame.hand.pinching, emoji: '🎣' });
+      drawHandCursor(ctx, frame.hand.pinchPos, frame.hand.pinching ? CANDY.sun : CANDY.sky, {
+        pinching: frame.hand.pinching,
+      });
     }
+    bottomHint(
+      ctx,
+      w,
+      h,
+      !frame.hand.present
+        ? '👋 举起手，用拇指+食指捏住小鱼！'
+        : anyHooked
+          ? '🎣 上钩啦！一直捏住不松手，等鱼拉进水桶！'
+          : '🤏 靠近小鱼并捏住拇指+食指，一直捏着拉进桶',
+      anyHooked ? CANDY.sun : CANDY.white,
+    );
     this.fx.draw(ctx);
   }
 

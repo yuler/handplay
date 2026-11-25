@@ -1,6 +1,6 @@
 import { sfx } from '../audio/sfx';
 import type { HandState, Point2D } from '../vision/gestures';
-import { drawDebugSkeleton, drawHandCursor, HandLink, sideColor } from './cursor';
+import { drawHandCursor, drawHandLines, HandLink, sideColor } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -448,8 +448,8 @@ export class BubblePopGame implements GameController {
     const activeHands = frame.hands.filter((hh) => hh.present).slice(0, 2);
     for (const hh of activeHands) {
       const color = sideColor(hh);
-      drawDebugSkeleton(ctx, hh, color);
-      drawHandCursor(ctx, hh.indexTip, color, { radius: 15, emoji: '✨' });
+      drawHandLines(ctx, hh, color, 0.62);
+      drawHandCursor(ctx, hh.indexTip, color, { radius: 13 });
     }
 
     // Draw all bubbles

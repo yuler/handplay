@@ -1,6 +1,6 @@
 import { sfx } from '../audio/sfx';
 import type { Point2D } from '../vision/gestures';
-import { drawDebugSkeleton, drawHandCursor, HandLink } from './cursor';
+import { drawHandCursor, drawHandLines, HandLink } from './cursor';
 import { FxSystem } from './particles';
 import { cartoonBall, CANDY, EMOJI_FONT, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -355,7 +355,7 @@ export class AirSlingshotGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    drawDebugSkeleton(ctx, hand, this.pulling ? CANDY.sun : CANDY.sky);
+    drawHandLines(ctx, hand, this.pulling ? CANDY.sun : CANDY.sky, 0.6);
 
     // 2. Targets: cream bubble, thick candy ring, ink outline
     for (const t of this.targets) {

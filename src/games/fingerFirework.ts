@@ -1,9 +1,9 @@
 import { sfx } from '../audio/sfx';
 import type { Point2D } from '../vision/gestures';
-import { drawHandCursor } from './cursor';
-import { dist, emojiAt, endCard, hint, Round, sky, title } from './kit';
+import { drawHandCursor, drawHandLines } from './cursor';
+import { bottomHint, cameraVeil, dist, emojiAt, endCard, Round } from './kit';
 import { FxSystem } from './particles';
-import { CANDY } from './theme';
+import { CANDY, INK } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
 
 interface Lantern {
@@ -148,20 +148,45 @@ export class FingerFireworkGame implements GameController {
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
-    sky(ctx, w, h, '#1c1740', '#3a2d6b');
-    title(ctx, w, '画一条线，停住就炸开', '#fff6e5');
-    for (const lantern of this.lanterns) emojiAt(ctx, lantern.lit ? '✨' : '🏮', lantern.x, lantern.y, lantern.lit ? 28 : 40);
+    cameraVeil(ctx, w, h, 'rgba(18, 20, 46, 0.36)');
+    drawHandLines(ctx, frame.hand, CANDY.sun, 0.72);
+    for (const lantern of this.lanterns) {
+      ctx.beginPath();
+      ctx.arc(lantern.x, lantern.y, lantern.lit ? 22 : 30, 0, Math.PI * 2);
+      ctx.fillStyle = lantern.lit ? 'rgba(255, 201, 60, 0.4)' : 'rgba(255, 255, 255, 0.2)';
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = lantern.lit ? CANDY.sun : 'rgba(255,255,255,0.65)';
+      ctx.stroke();
+      emojiAt(ctx, lantern.lit ? '✨' : '🏮', lantern.x, lantern.y + 2, lantern.lit ? 28 : 38);
+    }
     if (this.trail.length > 1) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       ctx.moveTo(this.trail[0].x, this.trail[0].y);
       for (const p of this.trail) ctx.lineTo(p.x, p.y);
-      ctx.strokeStyle = CANDY.sun;
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 10;
       ctx.stroke();
+      ctx.strokeStyle = CANDY.sun;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.restore();
     }
-    if (!frame.hand.present) hint(ctx, w, '食指画线，停一下放烟花');
-    if (frame.hand.present) drawHandCursor(ctx, frame.hand.indexTip, CANDY.sun, { emoji: '✨' });
+    if (frame.hand.present) drawHandCursor(ctx, frame.hand.indexTip, CANDY.sun, { radius: 11 });
+    bottomHint(
+      ctx,
+      w,
+      h,
+      !frame.hand.present
+        ? '👋 伸出食指经过灯笼画线，停住就能放烟花！'
+        : this.trail.length > 2
+          ? '✨ 画过 🏮 灯笼后，食指停住 0.2 秒引爆烟花！'
+          : '☝️ 用食指画一条穿过 🏮 灯笼的线，再停住引爆',
+      this.trail.length > 2 ? CANDY.sun : CANDY.white,
+    );
     this.fx.draw(ctx);
   }
 
