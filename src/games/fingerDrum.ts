@@ -14,6 +14,8 @@ interface Drum {
 }
 
 export const DRUM_Y = 0.72;
+/** Downward speed, so the same physical tap counts at 30fps and 60fps camera samples. */
+export const DRUM_HIT_SPEED = 700;
 
 export class FingerDrumGame implements GameController {
   readonly id = 'finger-drum';
@@ -28,6 +30,9 @@ export class FingerDrumGame implements GameController {
   private hits = 0;
   private drums: Drum[] = [];
   private prev: Point2D | null = null;
+  private prevTrack = -1;
+  /** Seconds since the last fresh camera sample, skipping reused positions. */
+  private freshFor = 0;
   private opened = false;
 
   constructor(private onFinish: (summary: GameOverSummary) => void) {}
@@ -41,6 +46,8 @@ export class FingerDrumGame implements GameController {
     this.hits = 0;
     this.drums = [];
     this.prev = null;
+    this.prevTrack = -1;
+    this.freshFor = 0;
     this.opened = false;
   }
 
@@ -60,32 +67,43 @@ export class FingerDrumGame implements GameController {
     const hand = frame.hand;
     if (!hand.present) {
       this.prev = null;
+      this.prevTrack = -1;
+      this.freshFor = 0;
       this.combo = 0;
       return;
     }
     const tip = hand.indexTip;
-    if (this.prev) {
-      const dy = tip.y - this.prev.y;
-      const jumped = dist(this.prev.x, this.prev.y, tip.x, tip.y) > Math.min(w, h) * 0.7;
-      if (!jumped && dy > 28) {
-        const y = h * DRUM_Y;
-        for (const drum of this.drums) {
-          if (drum.cool > 0) continue;
-          if (dist(tip.x, tip.y, drum.x, y) > 62) continue;
-          drum.cool = 0.22;
-          this.hits++;
-          this.combo++;
-          this.best = Math.max(this.best, this.combo);
-          const pts = 10 + Math.min(15, this.combo);
-          this.score += pts;
-          sfx.bubbleNote(this.combo);
-          this.fx.burst(drum.x, y, drum.color, 12, 220);
-          this.fx.popText(drum.x, y - 46, `+${pts}`, CANDY.sun, 24);
-          this.fx.shake(3, 0.12);
-        }
-      }
+    const track = hand.track ?? 0;
+    if (!this.prev || track !== this.prevTrack) {
+      this.prev = { x: tip.x, y: tip.y };
+      this.prevTrack = track;
+      this.freshFor = 0;
+      return;
     }
+    const dy = tip.y - this.prev.y;
+    const moved = dist(this.prev.x, this.prev.y, tip.x, tip.y);
+    this.freshFor += dt;
+    if (moved < 1) return;
+    const jumped = moved > Math.min(w, h) * 0.7;
+    const speed = dy / Math.max(this.freshFor, 0.001);
     this.prev = { x: tip.x, y: tip.y };
+    this.freshFor = 0;
+    if (jumped || speed < DRUM_HIT_SPEED) return;
+    const y = h * DRUM_Y;
+    for (const drum of this.drums) {
+      if (drum.cool > 0) continue;
+      if (dist(tip.x, tip.y, drum.x, y) > 62) continue;
+      drum.cool = 0.22;
+      this.hits++;
+      this.combo++;
+      this.best = Math.max(this.best, this.combo);
+      const pts = 10 + Math.min(15, this.combo);
+      this.score += pts;
+      sfx.bubbleNote(this.combo);
+      this.fx.burst(drum.x, y, drum.color, 12, 220);
+      this.fx.popText(drum.x, y - 46, `+${pts}`, CANDY.sun, 24);
+      this.fx.shake(3, 0.12);
+    }
   }
 
   private finish() {

@@ -13,6 +13,9 @@ interface Lantern {
 }
 
 export const LANTERN_Y = 0.3;
+/** A reused camera sample lasts one frame; a real stop has to sit still longer than this. */
+export const IGNITE_DWELL = 0.18;
+const MOVE_PX = 6;
 
 export class FingerFireworkGame implements GameController {
   readonly id = 'finger-firework';
@@ -27,6 +30,8 @@ export class FingerFireworkGame implements GameController {
   private lit = 0;
   private trail: Point2D[] = [];
   private prev: Point2D | null = null;
+  private prevTrack = -1;
+  private stillFor = 0;
   private cool = 0;
   private lanterns: Lantern[] = [];
   private opened = false;
@@ -42,6 +47,8 @@ export class FingerFireworkGame implements GameController {
     this.lit = 0;
     this.trail = [];
     this.prev = null;
+    this.prevTrack = -1;
+    this.stillFor = 0;
     this.cool = 0;
     this.lanterns = [];
     this.opened = false;
@@ -101,14 +108,34 @@ export class FingerFireworkGame implements GameController {
     if (!hand.present) {
       this.trail = [];
       this.prev = null;
+      this.prevTrack = -1;
+      this.stillFor = 0;
       return;
     }
     const tip = hand.indexTip;
-    const speed = this.prev ? dist(this.prev.x, this.prev.y, tip.x, tip.y) / Math.max(dt, 0.001) : 0;
-    if (!this.prev || dist(this.prev.x, this.prev.y, tip.x, tip.y) > 6) this.trail.push({ x: tip.x, y: tip.y });
-    if (this.trail.length > 48) this.trail.shift();
-    if (this.cool <= 0 && this.prev && speed < 120 && this.pathLength() > 80) this.ignite();
-    this.prev = { x: tip.x, y: tip.y };
+    const track = hand.track ?? 0;
+    // A new acquisition while `present` stays true is a jump, not a stroke the player drew.
+    if (!this.prev || track !== this.prevTrack) {
+      if (this.prev) this.trail = [];
+      this.trail.push({ x: tip.x, y: tip.y });
+      if (this.trail.length > 48) this.trail.shift();
+      this.prev = { x: tip.x, y: tip.y };
+      this.prevTrack = track;
+      this.stillFor = 0;
+      return;
+    }
+    const moved = dist(this.prev.x, this.prev.y, tip.x, tip.y);
+    if (moved > MOVE_PX) {
+      this.trail.push({ x: tip.x, y: tip.y });
+      if (this.trail.length > 48) this.trail.shift();
+      this.prev = { x: tip.x, y: tip.y };
+      this.stillFor = 0;
+      return;
+    }
+    // Identical samples (the camera frame reused across render ticks) and a real pause
+    // both land here. Only a pause that outlasts one camera interval may ignite.
+    this.stillFor += dt;
+    if (this.cool <= 0 && this.stillFor >= IGNITE_DWELL && this.pathLength() > 80) this.ignite();
   }
 
   private finish() {

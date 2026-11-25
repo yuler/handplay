@@ -2,14 +2,14 @@ import { GAMES } from '../src/games/catalog';
 import { BALL_Y } from '../src/games/palmPong';
 import { FISH_Y } from '../src/games/airFishing';
 import { BASKET_X, BASKET_Y, JELLY_Y } from '../src/games/jellyPinch';
-import { LANTERN_Y } from '../src/games/fingerFirework';
+import { LANTERN_Y, IGNITE_DWELL } from '../src/games/fingerFirework';
 import { DRUM_Y } from '../src/games/fingerDrum';
 import { PET_Y } from '../src/games/palmTorch';
 import { COIN_Y, JAR_Y } from '../src/games/coinMagnet';
 import { SERVE_Y } from '../src/games/fruitSlash';
 import { EMPTY_FACE, type FaceState } from '../src/vision/faceEngine';
 import { EMPTY_HAND, type HandState } from '../src/vision/handEngine';
-import type { SensorFrame } from '../src/games/types';
+import type { GameController, SensorFrame } from '../src/games/types';
 
 const W = 400;
 const H = 700;
@@ -123,13 +123,10 @@ for (let i = 1; i <= 4; i++) {
 jelly.push({ hand: handAt(W * BASKET_X[0], H * BASKET_Y, { pinching: false, pinchRatio: 0.8 }) });
 scripts.push(play('jelly-pinch', jelly));
 
-const sparkY = [0.62, 0.54, 0.46, 0.38, LANTERN_Y + 0.02, LANTERN_Y + 0.02];
-scripts.push(
-  play(
-    'finger-firework',
-    sparkY.map((y) => ({ hand: handAt(W / 2, H * y) })),
-  ),
-);
+const sparkY = [0.62, 0.54, 0.46, 0.38, LANTERN_Y + 0.02];
+const sparkSteps = sparkY.map((y) => ({ hand: handAt(W / 2, H * y) }));
+for (let i = 0; i < 5; i++) sparkSteps.push({ dt: 0.05, hand: handAt(W / 2, H * (LANTERN_Y + 0.02)) });
+scripts.push(play('finger-firework', sparkSteps));
 
 scripts.push(
   play('finger-drum', [
@@ -153,6 +150,86 @@ scripts.push(
 
 scripts.push(play('mole-nod', [{ dt: 0.05, face: faceAt({ yaw: 0, pitch: 0.6 }) }]));
 
+async function loadGame(id: (typeof GAMES)[number]['id']): Promise<GameController> {
+  const meta = GAMES.find((g) => g.id === id);
+  if (!meta) throw new Error(`missing ${id}`);
+  const Ctor = await meta.load();
+  return new Ctor(() => undefined);
+}
+
+/** Camera samples at `cameraHz` while the game loop runs at 60Hz. Returns the score. */
+async function replay(
+  id: (typeof GAMES)[number]['id'],
+  cameraHz: number,
+  duration: number,
+  at: (t: number) => { x: number; y: number; track?: number },
+): Promise<number> {
+  const game = await loadGame(id);
+  game.reset();
+  const renderDt = 1 / 60;
+  const cameraDt = 1 / cameraHz;
+  let sample = at(0);
+  let nextSample = 0;
+  for (let t = 0; t < duration - 1e-8; t += renderDt) {
+    if (t + 1e-6 >= nextSample) {
+      sample = at(t);
+      nextSample += cameraDt;
+    }
+    const posed = handAt(sample.x, sample.y, { track: sample.track ?? 1 });
+    game.update(renderDt, W, H, frame(posed, { ...EMPTY_FACE }));
+  }
+  return game.getHud().score;
+}
+
+const motion = (async () => {
+  const strokeSec = 0.5;
+  for (const cameraHz of [30, 60]) {
+    const during = await replay('finger-firework', cameraHz, strokeSec, (t) => ({ x: 40 + 600 * t, y: 210 }));
+    if (during !== 0) throw new Error(`firework ignited during a 600px/s stroke at ${cameraHz}fps camera (score ${during})`);
+    const game = await loadGame('finger-firework');
+    game.reset();
+    const renderDt = 1 / 60;
+    const cameraDt = 1 / cameraHz;
+    let sample = { x: 40, y: 210 };
+    let nextSample = 0;
+    for (let t = 0; t < strokeSec - 1e-8; t += renderDt) {
+      if (t + 1e-6 >= nextSample) {
+        sample = { x: 40 + 600 * t, y: 210 };
+        nextSample += cameraDt;
+      }
+      game.update(renderDt, W, H, frame(handAt(sample.x, sample.y), { ...EMPTY_FACE }));
+    }
+    const holdFrames = Math.ceil((IGNITE_DWELL + 0.06) / renderDt);
+    for (let i = 0; i < holdFrames; i++) {
+      game.update(renderDt, W, H, frame(handAt(sample.x, sample.y), { ...EMPTY_FACE }));
+    }
+    if (game.getHud().score <= 0) throw new Error(`firework did not ignite after a real stop at ${cameraHz}fps camera`);
+  }
+  console.log('ok  firework dwell vs reused samples');
+
+  for (const cameraHz of [30, 60]) {
+    const score = await replay('finger-drum', cameraHz, 0.24, (t) => ({ x: 200, y: 350 + 1000 * t }));
+    if (score <= 0) throw new Error(`drum missed a 1000px/s tap at ${cameraHz}fps camera`);
+  }
+  console.log('ok  drum speed at 30fps and 60fps');
+
+  const drumJump = await loadGame('finger-drum');
+  drumJump.reset();
+  drumJump.update(1 / 60, W, H, frame(handAt(200, 350, { track: 1 }), { ...EMPTY_FACE }));
+  drumJump.update(1 / 60, W, H, frame(handAt(200, 510, { track: 2 }), { ...EMPTY_FACE }));
+  if (drumJump.getHud().score !== 0) throw new Error(`drum scored a track change (score ${drumJump.getHud().score})`);
+
+  const sparkJump = await loadGame('finger-firework');
+  sparkJump.reset();
+  sparkJump.update(1 / 60, W, H, frame(handAt(40, 210, { track: 1 }), { ...EMPTY_FACE }));
+  sparkJump.update(1 / 60, W, H, frame(handAt(200, 210, { track: 2 }), { ...EMPTY_FACE }));
+  for (let i = 0; i < Math.ceil((IGNITE_DWELL + 0.08) / (1 / 60)); i++) {
+    sparkJump.update(1 / 60, W, H, frame(handAt(200, 210, { track: 2 }), { ...EMPTY_FACE }));
+  }
+  if (sparkJump.getHud().score !== 0) throw new Error(`firework scored a track change (score ${sparkJump.getHud().score})`);
+  console.log('ok  track change clears drum and firework motion');
+})();
+
 const crash = (async () => {
   for (const meta of GAMES) {
     const Ctor = await meta.load();
@@ -165,5 +242,5 @@ const crash = (async () => {
   console.log(`ok  catalog ${GAMES.length} games draw`);
 })();
 
-await Promise.all([...scripts, crash]);
+await Promise.all([...scripts, crash, motion]);
 console.log('smoke passed');
