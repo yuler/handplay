@@ -1,0 +1,121 @@
+import { sfx } from '../audio/sfx';
+import { drawHandCursor } from './cursor';
+import { dist, emojiAt, endCard, hint, Round, sky, title } from './kit';
+import { FxSystem } from './particles';
+import { CANDY } from './theme';
+import type { GameController, GameOverSummary, SensorFrame } from './types';
+
+interface Pet {
+  x: number;
+  y: number;
+  emoji: string;
+  charge: number;
+  saved: boolean;
+}
+
+export const PET_Y = 0.42;
+
+export class PalmTorchGame implements GameController {
+  readonly id = 'palm-torch';
+  readonly name = '掌心手电';
+  readonly sensor = 'hand1' as const;
+
+  private fx = new FxSystem();
+  private round = new Round();
+  private score = 0;
+  private combo = 0;
+  private best = 0;
+  private saved = 0;
+  private pets: Pet[] = [];
+  private opened = false;
+
+  constructor(private onFinish: (summary: GameOverSummary) => void) {}
+
+  reset() {
+    this.fx.clear();
+    this.round.reset();
+    this.score = 0;
+    this.combo = 0;
+    this.best = 0;
+    this.saved = 0;
+    this.pets = [];
+    this.opened = false;
+  }
+
+  private layout(w: number, h: number) {
+    const emojis = ['🐰', '🐥', '🐸', '🐱'];
+    this.pets = [
+      { x: w / 2, y: h * PET_Y, emoji: '🐰', charge: 0, saved: false },
+      { x: w * 0.22, y: h * 0.58, emoji: '🐥', charge: 0, saved: false },
+      { x: w * 0.78, y: h * 0.3, emoji: '🐸', charge: 0, saved: false },
+    ];
+    for (const pet of this.pets) pet.emoji = emojis[this.pets.indexOf(pet) % emojis.length];
+    this.opened = true;
+  }
+
+  update(dt: number, w: number, h: number, frame: SensorFrame) {
+    this.fx.update(dt);
+    if (!this.round.tick(dt, () => this.finish())) return;
+    if (!this.opened) this.layout(w, h);
+    const hand = frame.hand;
+    const lighting = hand.present && hand.gesture === 'open';
+    for (const pet of this.pets) {
+      if (pet.saved) continue;
+      const near = lighting && dist(hand.palmCenter.x, hand.palmCenter.y, pet.x, pet.y) < 100;
+      pet.charge = near ? pet.charge + dt : Math.max(0, pet.charge - dt);
+      if (pet.charge < 0.22) continue;
+      pet.saved = true;
+      this.saved++;
+      this.combo++;
+      this.best = Math.max(this.best, this.combo);
+      const pts = 25;
+      this.score += pts;
+      sfx.meow(true);
+      this.fx.burst(pet.x, pet.y, CANDY.sun, 16, 240);
+      this.fx.popText(pet.x, pet.y - 28, `+${pts}`, CANDY.sun, 26);
+    }
+    if (this.pets.length > 0 && this.pets.every((p) => p.saved)) {
+      this.layout(w, h);
+    }
+  }
+
+  private finish() {
+    this.onFinish(
+      endCard(this.id, this.name, this.score, [
+        { label: '照出来', value: `${this.saved} 只` },
+        { label: '最高连击', value: `×${this.best}` },
+      ]),
+    );
+  }
+
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
+    sky(ctx, w, h, '#14182e', '#2a2150');
+    title(ctx, w, '张开手掌照亮小动物', '#fff6e5');
+    const hand = frame.hand;
+    for (const pet of this.pets) {
+      const near = hand.present && dist(hand.palmCenter.x, hand.palmCenter.y, pet.x, pet.y) < 110;
+      ctx.globalAlpha = pet.saved ? 1 : near ? 0.35 + Math.min(0.65, pet.charge / 0.22) : 0.16;
+      emojiAt(ctx, pet.saved ? '🌟' : pet.emoji, pet.x, pet.y, 48);
+      ctx.globalAlpha = 1;
+    }
+    if (hand.present && hand.gesture === 'open') {
+      const g = ctx.createRadialGradient(hand.palmCenter.x, hand.palmCenter.y, 16, hand.palmCenter.x, hand.palmCenter.y, 150);
+      g.addColorStop(0, 'rgba(255, 236, 170, 0.45)');
+      g.addColorStop(1, 'rgba(255, 236, 170, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(hand.palmCenter.x, hand.palmCenter.y, 150, 0, Math.PI * 2);
+      ctx.fill();
+      drawHandCursor(ctx, hand.palmCenter, CANDY.sun, { radius: 20, emoji: '🔦' });
+    } else if (!hand.present) {
+      hint(ctx, w, '张开五指，掌心当手电');
+    } else {
+      drawHandCursor(ctx, hand.palmCenter, CANDY.grape, { emoji: '✊' });
+    }
+    this.fx.draw(ctx);
+  }
+
+  getHud() {
+    return this.round.hud(this.score, this.combo);
+  }
+}

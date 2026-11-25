@@ -10,7 +10,17 @@ export type GameId =
   | 'no-blink'
   | 'animal-face'
   | 'dual-hand'
-  | 'bubble-pop';
+  | 'bubble-pop'
+  | 'fruit-slash'
+  | 'palm-pong'
+  | 'air-fishing'
+  | 'jelly-pinch'
+  | 'finger-firework'
+  | 'finger-drum'
+  | 'wipe-glass'
+  | 'palm-torch'
+  | 'coin-magnet'
+  | 'mole-nod';
 
 export type SensorMode = 'hand1' | 'hand2' | 'face';
 

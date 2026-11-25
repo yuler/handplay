@@ -371,6 +371,17 @@ button {
   background: linear-gradient(160deg, #fff 55%, #fff2c7 100%);
 }
 
+.game-card.slash { background: linear-gradient(160deg, #fff 55%, #ffe1d6 100%); }
+.game-card.pong { background: linear-gradient(160deg, #fff 55%, #d8f7ec 100%); }
+.game-card.fish { background: linear-gradient(160deg, #fff 55%, #d4f1ff 100%); }
+.game-card.jelly { background: linear-gradient(160deg, #fff 55%, #f3e4ff 100%); }
+.game-card.spark { background: linear-gradient(160deg, #fff 55%, #ece6ff 100%); }
+.game-card.drum { background: linear-gradient(160deg, #fff 55%, #ffe8c2 100%); }
+.game-card.wipe { background: linear-gradient(160deg, #fff 55%, #e5f6ff 100%); }
+.game-card.torch { background: linear-gradient(160deg, #fff 55%, #fff0c9 100%); }
+.game-card.coin { background: linear-gradient(160deg, #fff 55%, #ffe7a3 100%); }
+.game-card.mole { background: linear-gradient(160deg, #fff 55%, #e5f6c8 100%); }
+
 .game-icon {
   width: 72px;
   height: 72px;
@@ -424,6 +435,17 @@ button {
   background: var(--sun);
   transform: rotate(5deg);
 }
+
+.slash .game-icon { background: #ff7a6b; }
+.pong .game-icon { background: #3fd4a2; transform: rotate(6deg); }
+.fish .game-icon { background: #5cc8ff; }
+.jelly .game-icon { background: #ff8fc7; transform: rotate(-6deg); }
+.spark .game-icon { background: #9b7bff; }
+.drum .game-icon { background: #ffc93c; transform: rotate(5deg); }
+.wipe .game-icon { background: #9fd8ff; }
+.torch .game-icon { background: #ffd36a; }
+.coin .game-icon { background: #ffb703; transform: rotate(-4deg); }
+.mole .game-icon { background: #b6e388; transform: rotate(5deg); }
 
 .game-meta {
   flex: 1;
