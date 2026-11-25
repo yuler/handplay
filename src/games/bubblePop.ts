@@ -1,5 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawHandSkeleton, type HandState, type Point2D } from '../vision/gestures';
+import type { HandState, Point2D } from '../vision/gestures';
+import { drawDebugSkeleton, drawHandCursor, HandLink, sideColor } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -45,7 +46,6 @@ const TOY_POOL = [
   { emoji: '🌸', color: '#ff9ec4' },
   { emoji: '🍀', color: CANDY.mint },
 ];
-const HAND_COLORS = [CANDY.sky, CANDY.pink];
 
 export class BubblePopGame implements GameController {
   readonly id = 'bubble-pop';
@@ -69,6 +69,7 @@ export class BubblePopGame implements GameController {
   private spawnCooldown = 0.25;
   private goldCooldown = 7.5;
   private prevPalms: Array<Point2D | null> = [null, null];
+  private palmLinks = [new HandLink(), new HandLink()];
 
   constructor(private onFinish: (summary: GameOverSummary) => void) {}
 
@@ -88,6 +89,7 @@ export class BubblePopGame implements GameController {
     this.spawnCooldown = 0.2;
     this.goldCooldown = 7.0;
     this.prevPalms = [null, null];
+    this.palmLinks.forEach((l) => l.reset());
   }
 
   private spawnBubble(w: number, h: number, forceGold = false) {
@@ -211,18 +213,22 @@ export class BubblePopGame implements GameController {
     const handSpeeds: number[] = [0, 0];
     const handPoints: Point2D[][] = [];
 
-    for (let i = 0; i < 2; i++) {
-      const hh = activeHands[i];
-      if (hh) {
-        const prev = this.prevPalms[i];
-        if (prev && dt > 0) {
-          handSpeeds[i] = Math.hypot(hh.palmCenter.x - prev.x, hh.palmCenter.y - prev.y) / dt;
-        }
-        this.prevPalms[i] = { x: hh.palmCenter.x, y: hh.palmCenter.y };
-        handPoints.push(this.getHandTouchPoints(hh));
-      } else {
-        this.prevPalms[i] = null;
-        handPoints.push([]);
+    // Speeds are tracked per stable side so a reacquired/swapped hand never reads as a fast wave
+    const seen = [false, false];
+    activeHands.forEach((hh, i) => {
+      const side = hh.side === 'right' ? 1 : 0;
+      seen[side] = true;
+      const prev = this.prevPalms[side];
+      if (this.palmLinks[side].step(hh, hh.palmCenter, w, h) && prev && dt > 0) {
+        handSpeeds[i] = Math.hypot(hh.palmCenter.x - prev.x, hh.palmCenter.y - prev.y) / dt;
+      }
+      this.prevPalms[side] = { x: hh.palmCenter.x, y: hh.palmCenter.y };
+      handPoints.push(this.getHandTouchPoints(hh));
+    });
+    for (let side = 0; side < 2; side++) {
+      if (!seen[side]) {
+        this.prevPalms[side] = null;
+        this.palmLinks[side].reset();
       }
     }
 
@@ -440,26 +446,11 @@ export class BubblePopGame implements GameController {
 
     // Draw tracked hands with glowing magic rings
     const activeHands = frame.hands.filter((hh) => hh.present).slice(0, 2);
-    activeHands.forEach((hh, idx) => {
-      const color = HAND_COLORS[idx % HAND_COLORS.length];
-      drawHandSkeleton(ctx, hh, color, 0.55);
-
-      // Cute star wand glow at index fingertip
-      ctx.save();
-      ctx.translate(hh.indexTip.x, hh.indexTip.y);
-      ctx.beginPath();
-      ctx.arc(0, 0, 18 + Math.sin(this.clock * 10 + idx) * 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = `${color}55`;
-      ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = INK;
-      ctx.stroke();
-      ctx.font = `18px ${EMOJI_FONT}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('✨', 0, 1);
-      ctx.restore();
-    });
+    for (const hh of activeHands) {
+      const color = sideColor(hh);
+      drawDebugSkeleton(ctx, hh, color);
+      drawHandCursor(ctx, hh.indexTip, color, { radius: 15, emoji: '✨' });
+    }
 
     // Draw all bubbles
     for (const b of this.bubbles) {

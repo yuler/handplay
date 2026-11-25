@@ -1,76 +1,19 @@
 import './style.css';
+import './ui/overlays.css';
 import { sfx } from './audio/sfx';
-import type { GameController, GameId, GameOverSummary, SensorMode } from './games/types';
+import { refreshBestTags, saveBest } from './bestScores';
+import { GAME_MAP, type GameMeta } from './games/catalog';
+import type { GameController, GameId, GameOverSummary } from './games/types';
+import { currentState, parseRoute, playPath, pushRoute, replaceRoute } from './router';
+import { GameRuntime } from './runtime';
 import { popConfetti } from './ui/confetti';
-import { APP_HTML } from './ui/markup';
+import { APP_HTML, tagsHtml } from './ui/markup';
+import { describeStartError } from './ui/startError';
 import { CameraManager } from './vision/camera';
-import { EMPTY_FACE, FaceEngine } from './vision/faceEngine';
-import { EMPTY_HAND, HandEngine, type InitProgress, type VisionLoadState } from './vision/handEngine';
+import { FaceEngine } from './vision/faceEngine';
+import { HandEngine, type VisionLoadState } from './vision/handEngine';
 
-const BEST_KEY = 'handplay:best:v1';
-
-const DEFAULT_BEST: Record<GameId, number> = {
-  'gesture-rush': 0,
-  'air-slingshot': 0,
-  'finger-rune': 0,
-  'kitty-chase': 0,
-  'mouth-munch': 0,
-  'no-blink': 0,
-  'animal-face': 0,
-  'dual-hand': 0,
-  'bubble-pop': 0,
-};
-
-const GAME_SENSOR: Record<GameId, SensorMode> = {
-  'gesture-rush': 'hand1',
-  'air-slingshot': 'hand1',
-  'finger-rune': 'hand1',
-  'kitty-chase': 'hand1',
-  'mouth-munch': 'face',
-  'no-blink': 'face',
-  'animal-face': 'face',
-  'dual-hand': 'hand2',
-  'bubble-pop': 'hand2',
-};
-
-function loadBest(): Record<GameId, number> {
-  try {
-    return {
-      ...DEFAULT_BEST,
-      ...(JSON.parse(localStorage.getItem(BEST_KEY) || '{}') as Partial<Record<GameId, number>>),
-    };
-  } catch {
-    return { ...DEFAULT_BEST };
-  }
-}
-
-function saveBest(id: GameId, score: number): boolean {
-  const best = loadBest();
-  if (score > (best[id] ?? 0)) {
-    best[id] = score;
-    try {
-      localStorage.setItem(BEST_KEY, JSON.stringify(best));
-    } catch {
-      // ignore storage quota
-    }
-    return true;
-  }
-  return false;
-}
-
-type GameCtor = new (onFinish: (summary: GameOverSummary) => void) => GameController;
-
-const GAME_MODULES: Record<GameId, () => Promise<GameCtor>> = {
-  'gesture-rush': () => import('./games/gestureRush').then((m) => m.GestureRushGame),
-  'air-slingshot': () => import('./games/airSlingshot').then((m) => m.AirSlingshotGame),
-  'finger-rune': () => import('./games/fingerRune').then((m) => m.FingerRuneGame),
-  'kitty-chase': () => import('./games/kittyChase').then((m) => m.KittyChaseGame),
-  'mouth-munch': () => import('./games/mouthMunch').then((m) => m.MouthMunchGame),
-  'no-blink': () => import('./games/noBlink').then((m) => m.NoBlinkGame),
-  'animal-face': () => import('./games/animalFace').then((m) => m.AnimalFaceGame),
-  'dual-hand': () => import('./games/dualHand').then((m) => m.DualHandGame),
-  'bubble-pop': () => import('./games/bubblePop').then((m) => m.BubblePopGame),
-};
+const LOBBY_TITLE = '手手玩 · HandPlay 隔空小游戏';
 
 const app = document.getElementById('app')!;
 app.innerHTML = APP_HTML;
@@ -78,25 +21,23 @@ app.innerHTML = APP_HTML;
 const $ = (id: string) => document.getElementById(id)!;
 const videoEl = $('cam') as HTMLVideoElement;
 const canvasEl = $('canvas') as HTMLCanvasElement;
-const ctx = canvasEl.getContext('2d')!;
 
 const hudEl = $('hud');
-const hudScoreEl = $('hud-score');
-const hudTimerEl = $('hud-timer');
-const fpsTagEl = $('fps-tag');
 const lobbyEl = $('lobby');
 const prefetchChip = $('prefetch-chip');
 const loaderEl = $('loader');
 const loaderTitle = $('loader-title');
-const loaderSteps = $('loader-steps');
 const stepCam = $('step-cam');
 const stepModelLabel = $('step-model-label');
 const stepModel = $('step-model');
-const loaderBar = $('loader-bar');
 const loaderFill = $('loader-fill');
 const loaderPct = $('loader-pct');
-const loaderError = $('loader-error');
-const loaderBack = $('loader-back');
+const readyEl = $('ready');
+const readyCard = $('ready-card');
+const errorEl = $('cam-error');
+const errTitle = $('err-title');
+const errMsg = $('err-msg');
+const errRetry = $('err-retry') as HTMLButtonElement;
 const resultEl = $('result');
 const resultCard = $('result-card');
 const confettiEl = $('confetti');
@@ -112,43 +53,27 @@ const resStats = $('res-stats');
 const camera = new CameraManager();
 const handEngine = new HandEngine();
 const faceEngine = new FaceEngine();
+const runtime = new GameRuntime({
+  canvas: canvasEl,
+  video: videoEl,
+  hand: handEngine,
+  face: faceEngine,
+  hudScore: $('hud-score'),
+  hudTimer: $('hud-timer'),
+  fpsTag: $('fps-tag'),
+  prompt: $('sensor-prompt'),
+  countdown: $('countdown'),
+  countdownNum: $('countdown-num'),
+});
 
-let activeGame: GameController | null = null;
-let screenState: 'lobby' | 'loading' | 'playing' | 'result' = 'lobby';
-let lastFrameTime = 0;
-let lastHudTime = -1;
-let lastHudScore = 0;
+type Screen = 'lobby' | 'ready' | 'loading' | 'playing' | 'result' | 'error';
+let screen: Screen = 'lobby';
+let currentId: GameId | null = null;
+/** Bumped on every navigation so stale async starts/resumes bail out */
+let navToken = 0;
 let recordTimer = 0;
-let vw = window.innerWidth;
-let vh = window.innerHeight;
-// 1.5x keeps cartoon strokes crisp on phones while filling far fewer pixels than 2-3x
-let dpr = Math.min(1.5, window.devicePixelRatio || 1);
+let retryAction: (() => void) | null = null;
 
-function resize() {
-  vw = window.innerWidth;
-  vh = window.innerHeight;
-  dpr = Math.min(1.5, window.devicePixelRatio || 1);
-  canvasEl.width = Math.round(vw * dpr);
-  canvasEl.height = Math.round(vh * dpr);
-}
-resize();
-window.addEventListener('resize', resize);
-
-function refreshBestTags() {
-  const best = loadBest();
-  for (const id of Object.keys(DEFAULT_BEST) as GameId[]) {
-    const el = document.getElementById(`best-${id}`);
-    if (!el) continue;
-    const score = best[id] ?? 0;
-    if (score <= 0) {
-      el.textContent = '✨ 来试试';
-    } else if (id === 'no-blink') {
-      el.textContent = `🏆 ${(score / 10).toFixed(1)} 秒`;
-    } else {
-      el.textContent = `🏆 最高 ${score}`;
-    }
-  }
-}
 refreshBestTags();
 
 // ---- Background prefetch while the lobby is on screen (no camera request here) ----
@@ -180,7 +105,7 @@ requestAnimationFrame(() =>
 );
 
 // ---- Loader ----
-function renderLoader(modelName: string, { cameraReady, load }: InitProgress) {
+function renderLoader(modelName: string, cameraReady: boolean, load: VisionLoadState) {
   const dl = Math.min(1, load.loaded / Math.max(1, load.total));
   const model =
     load.stage === 'ready' ? 1 : load.stage === 'init' ? 0.9 : load.stage === 'download' ? dl * 0.85 : 0;
@@ -208,20 +133,28 @@ function renderLoader(modelName: string, { cameraReady, load }: InitProgress) {
         : '准备开玩啦！';
 }
 
-function showLoaderError(err: unknown) {
-  loaderTitle.textContent = '哎呀，没打开 😢';
-  loaderSteps.style.display = 'none';
-  loaderBar.style.display = 'none';
-  loaderPct.style.display = 'none';
-  loaderError.style.display = 'block';
-  loaderError.textContent = err instanceof Error ? err.message : String(err);
-  loaderBack.style.display = 'block';
+function hideOverlays() {
+  for (const el of [lobbyEl, readyEl, loaderEl, errorEl, resultEl]) el.classList.add('hidden');
+}
+
+function showStartError(err: unknown, retry: () => void) {
+  console.warn('[HandPlay] start failed:', err);
+  screen = 'error';
+  hideOverlays();
+  hudEl.style.display = 'none';
+  const view = describeStartError(err);
+  errTitle.textContent = view.title;
+  errMsg.textContent = view.message;
+  errRetry.style.display = view.retry ? '' : 'none';
+  errRetry.textContent = view.retry ?? '';
+  retryAction = view.retry ? retry : null;
+  errorEl.classList.remove('hidden');
   sfx.miss();
 }
 
 // ---- Result ----
 function onFinish(summary: GameOverSummary) {
-  screenState = 'result';
+  screen = 'result';
   const isNew = saveBest(summary.gameId, summary.score) && summary.score > 0;
   refreshBestTags();
   resHeadline.textContent = isNew ? '新纪录！你最棒！' : summary.score > 0 ? '玩得真好！' : '再试一次吧！';
@@ -254,100 +187,241 @@ function onFinish(summary: GameOverSummary) {
   }
 }
 
-function beginRound() {
-  screenState = 'playing';
-  lastHudTime = -1;
-  lastHudScore = 0;
+// ---- Game lifecycle ----
+function resetVision() {
+  handEngine.resetTracking();
+  faceEngine.reset();
+}
+
+function beginRound(game: GameController) {
+  screen = 'playing';
+  resetVision();
+  videoEl.classList.remove('hidden');
   hudEl.style.display = 'flex';
-  fpsTagEl.style.display = 'block';
+  runtime.start(game);
   sfx.go();
 }
 
+/** Every entry goes through the camera gate, even when the stream looks healthy. */
 async function startGame(id: GameId) {
-  if (screenState === 'loading' || screenState === 'playing') return;
+  const token = ++navToken;
+  const meta = GAME_MAP[id];
+  currentId = id;
   sfx.unlock();
-  sfx.tap();
+  hideOverlays();
+  document.title = `${meta.title} · 手手玩`;
 
-  lobbyEl.classList.add('hidden');
-  resultEl.classList.add('hidden');
-
-  const sensor = GAME_SENSOR[id];
-  const needFace = sensor === 'face';
+  const needFace = meta.sensor === 'face';
+  const engine = needFace ? faceEngine : handEngine;
   const modelName = needFace ? '脸部识别' : '小手识别';
-  const needInit = !camera.ready || (needFace ? !faceEngine.ready : !handEngine.ready);
-  const gameCtor = GAME_MODULES[id]();
+  const quick = camera.live && engine.ready;
+  let cameraReady = false;
+  let unsubscribe = () => {};
 
-  let Ctor: GameCtor;
-  if (needInit) {
-    screenState = 'loading';
+  screen = 'loading';
+  const showLoader = () => {
+    if (token !== navToken || screen !== 'loading') return;
     stepModelLabel.textContent = needFace ? '😜 脸部识别' : '🧠 小手识别';
+    renderLoader(modelName, cameraReady, engine.load);
     loaderEl.classList.remove('hidden');
-    loaderSteps.style.display = '';
-    loaderBar.style.display = '';
-    loaderPct.style.display = '';
-    loaderError.style.display = 'none';
-    loaderBack.style.display = 'none';
+    unsubscribe = engine.onLoadChange((s) => renderLoader(modelName, cameraReady, s));
+  };
+  // The fast path normally resolves within a frame or two; only show progress if it stalls
+  const slowTimer = quick ? window.setTimeout(showLoader, 400) : 0;
+  if (!quick) {
+    showLoader();
     sfx.whoosh();
     sfx.loaderStart();
+  }
 
-    try {
-      const initTask = needFace
-        ? faceEngine.init(camera, videoEl, (p) => renderLoader(modelName, p))
-        : handEngine.init(camera, videoEl, (p) => renderLoader(modelName, p));
-      [, Ctor] = await Promise.all([initTask, gameCtor]);
-    } catch (err) {
-      showLoaderError(err);
-      return;
-    }
-    if (screenState !== 'loading') return;
+  let game: GameController;
+  try {
+    const camTask = camera.ensureReady(videoEl).then(() => {
+      cameraReady = true;
+      renderLoader(modelName, true, engine.load);
+    });
+    const [, , Ctor] = await Promise.all([camTask, engine.init(videoEl), meta.load()]);
+    if (token !== navToken) return;
+    if (!needFace) await handEngine.setNumHands(meta.sensor === 'hand2' ? 2 : 1);
+    if (token !== navToken) return;
+    game = new Ctor(onFinish);
+  } catch (err) {
+    if (token === navToken) showStartError(err, () => void startGame(id));
+    return;
+  } finally {
+    window.clearTimeout(slowTimer);
+    unsubscribe();
+  }
+
+  if (!loaderEl.classList.contains('hidden')) {
     sfx.ready();
     loaderEl.classList.add('hidden');
-  } else {
-    screenState = 'loading';
-    Ctor = await gameCtor;
-    if (screenState !== 'loading') return;
   }
-
-  if (!needFace) {
-    await handEngine.setNumHands(sensor === 'hand2' ? 2 : 1);
-  }
-
-  videoEl.classList.remove('hidden');
-  activeGame = new Ctor(onFinish);
-  beginRound();
+  beginRound(game);
 }
 
-function goLobby() {
-  sfx.back();
+async function restartGame() {
+  const game = runtime.game;
+  if (!game) return;
+  const token = ++navToken;
   window.clearTimeout(recordTimer);
-  screenState = 'lobby';
-  activeGame = null;
-  hudEl.style.display = 'none';
-  fpsTagEl.style.display = 'none';
+  sfx.again();
   resultEl.classList.add('hidden');
-  loaderEl.classList.add('hidden');
-  lobbyEl.classList.remove('hidden');
-  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  screen = 'loading';
+  try {
+    await camera.ensureReady(videoEl);
+  } catch (err) {
+    if (token === navToken) showStartError(err, () => void restartGame());
+    return;
+  }
+  if (token !== navToken) return;
+  game.reset();
+  beginRound(game);
 }
+
+/** Back from a hidden tab: re-run the gate (reopens a stale camera), then 3-2-1. */
+async function resumeAfterPause() {
+  if (!runtime.paused) return;
+  const token = navToken;
+  try {
+    await camera.ensureReady(videoEl);
+  } catch (err) {
+    if (token === navToken) showStartError(err, retryResume);
+    return;
+  }
+  if (token !== navToken || !runtime.paused) return;
+  resetVision();
+  runtime.resumeWithCountdown();
+}
+
+function retryResume() {
+  errorEl.classList.add('hidden');
+  hudEl.style.display = 'flex';
+  screen = 'playing';
+  void resumeAfterPause();
+}
+
+function teardown() {
+  navToken++;
+  window.clearTimeout(recordTimer);
+  runtime.stop();
+  currentId = null;
+  retryAction = null;
+  hudEl.style.display = 'none';
+  hideOverlays();
+  videoEl.classList.add('hidden');
+  camera.scheduleStop();
+}
+
+function showLobby() {
+  teardown();
+  screen = 'lobby';
+  document.title = LOBBY_TITLE;
+  refreshBestTags();
+  lobbyEl.classList.remove('hidden');
+}
+
+function fillReadyCard(meta: GameMeta) {
+  readyCard.className = `ready-card ${meta.theme}`;
+  $('ready-icon').textContent = meta.icon;
+  $('ready-title').textContent = meta.title;
+  $('ready-desc').textContent = meta.desc;
+  $('ready-tags').innerHTML = tagsHtml(meta);
+}
+
+function showReady(id: GameId) {
+  teardown();
+  const meta = GAME_MAP[id];
+  screen = 'ready';
+  currentId = id;
+  document.title = `${meta.title} · 手手玩`;
+  fillReadyCard(meta);
+  readyEl.classList.remove('hidden');
+}
+
+// ---- Routing ----
+function applyRoute() {
+  const route = parseRoute(location.pathname);
+  if (!route) {
+    replaceRoute('/');
+    showLobby();
+    return;
+  }
+  if (route.name === 'lobby') {
+    if (screen !== 'lobby') {
+      if (screen !== 'ready') sfx.back();
+      showLobby();
+    }
+    return;
+  }
+  if (currentId === route.id && screen !== 'lobby') return;
+  showReady(route.id);
+}
+
+function goHome() {
+  if (currentState().fromLobby) {
+    history.back();
+  } else {
+    if (screen !== 'ready') sfx.back();
+    replaceRoute('/');
+    showLobby();
+  }
+}
+
+window.addEventListener('popstate', applyRoute);
+applyRoute();
+
+// ---- Page lifecycle: pause when hidden, gated 3-2-1 resume when back ----
+function onHidden() {
+  if (screen === 'playing') runtime.pause();
+}
+
+function onVisible() {
+  if (screen === 'playing' && runtime.paused) {
+    sfx.unlock();
+    void resumeAfterPause();
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') onHidden();
+  else onVisible();
+});
+window.addEventListener('pagehide', onHidden);
+window.addEventListener('pageshow', onVisible);
 
 // ---- Bindings ----
 document.addEventListener('pointerup', () => sfx.unlock(), { passive: true });
 
 document.querySelectorAll<HTMLButtonElement>('.game-card').forEach((btn) => {
-  btn.addEventListener('click', () => void startGame(btn.dataset.game as GameId));
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (screen !== 'lobby') return;
+    const id = btn.dataset.game as GameId;
+    sfx.unlock();
+    sfx.tap();
+    pushRoute(playPath(id), { fromLobby: true });
+    void startGame(id);
+  });
 });
 
-$('btn-home').addEventListener('click', goLobby);
-$('res-home').addEventListener('click', goLobby);
-loaderBack.addEventListener('click', goLobby);
-
+$('ready-start').addEventListener('click', () => {
+  if (screen !== 'ready' || !currentId) return;
+  sfx.unlock();
+  sfx.tap();
+  void startGame(currentId);
+});
+$('ready-home').addEventListener('click', goHome);
+$('err-home').addEventListener('click', goHome);
+errRetry.addEventListener('click', () => {
+  sfx.unlock();
+  sfx.click();
+  retryAction?.();
+});
+$('btn-home').addEventListener('click', goHome);
+$('res-home').addEventListener('click', goHome);
 $('res-again').addEventListener('click', () => {
-  if (!activeGame) return;
-  window.clearTimeout(recordTimer);
-  sfx.again();
-  resultEl.classList.add('hidden');
-  activeGame.reset();
-  beginRound();
+  if (screen === 'result') void restartGame();
 });
 
 $('btn-dim').addEventListener('click', () => {
@@ -368,54 +442,15 @@ btnMute.addEventListener('click', () => {
 });
 
 canvasEl.addEventListener('pointerdown', (e) => {
-  if (screenState !== 'playing' || !activeGame?.onTap) return;
+  const game = runtime.game;
+  if (screen !== 'playing' || !runtime.running || !game?.onTap) return;
   const rect = canvasEl.getBoundingClientRect();
-  activeGame.onTap(e.clientX - rect.left, e.clientY - rect.top, vw, vh);
+  game.onTap(e.clientX - rect.left, e.clientY - rect.top, runtime.vw, runtime.vh);
 });
 
 // ---- Main loop ----
 function loop(ts: number) {
   requestAnimationFrame(loop);
-  const dt = lastFrameTime ? Math.min(0.05, Math.max(0.001, (ts - lastFrameTime) / 1000)) : 1 / 60;
-  lastFrameTime = ts;
-
-  if (screenState !== 'playing' || !activeGame) return;
-
-  const isFace = activeGame.sensor === 'face';
-  const hand = isFace ? EMPTY_HAND : handEngine.update(vw, vh);
-  const hands = isFace ? [] : handEngine.hands;
-  const face = isFace ? faceEngine.update(vw, vh) : EMPTY_FACE;
-  const frame = { hand, hands, face, video: videoEl };
-
-  activeGame.update(dt, vw, vh, frame);
-
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, vw, vh);
-  activeGame.draw(ctx, vw, vh, frame);
-
-  const hud = activeGame.getHud();
-  if (hud.score !== lastHudScore) {
-    if (hud.score > lastHudScore) {
-      hudScoreEl.classList.remove('bump');
-      void hudScoreEl.offsetWidth;
-      hudScoreEl.classList.add('bump');
-    }
-    lastHudScore = hud.score;
-  }
-  hudScoreEl.textContent = hud.scoreText ?? `⭐ ${hud.score}`;
-
-  if (hud.timerText) {
-    hudTimerEl.textContent = hud.timerText;
-    hudTimerEl.classList.toggle('urgent', Boolean(hud.urgent));
-  } else if (hud.timeLeft !== lastHudTime) {
-    if (lastHudTime !== -1 && hud.timeLeft > 0 && hud.timeLeft <= 5) sfx.tick(hud.timeLeft);
-    lastHudTime = hud.timeLeft;
-    hudTimerEl.textContent = `⏱ ${hud.timeLeft}`;
-    hudTimerEl.classList.toggle('urgent', hud.urgent ?? hud.timeLeft <= 5);
-  }
-
-  const stats = isFace ? faceEngine.stats : handEngine.stats;
-  const modeTag = isFace ? 'FACE' : activeGame.sensor === 'hand2' ? '2H' : '1H';
-  fpsTagEl.textContent = `${modeTag} · ${stats.delegate} · ${stats.fps} fps`;
+  if (screen === 'playing') runtime.tick(ts);
 }
 requestAnimationFrame(loop);

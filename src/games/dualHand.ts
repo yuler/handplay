@@ -1,10 +1,10 @@
 import { sfx } from '../audio/sfx';
 import {
-  drawHandSkeleton,
   GESTURE_MAP,
   type GestureId,
   type HandState,
 } from '../vision/gestures';
+import { drawDebugSkeleton, drawHandCursor, SIDE_COLORS } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -99,19 +99,15 @@ export class DualHandGame implements GameController {
     };
   }
 
-  /** Split detected hands into screen-left and screen-right slots accurately. */
-  private splitHands(hands: HandState[], w: number): { leftHand: HandState | null; rightHand: HandState | null } {
-    if (hands.length >= 2) {
-      // HandEngine already sorts left-to-right by screen X
-      return { leftHand: hands[0], rightHand: hands[1] };
+  /** Split by the engine's stable side labels so hands never flip slots mid-hold. */
+  private splitHands(hands: HandState[]): { leftHand: HandState | null; rightHand: HandState | null } {
+    let leftHand: HandState | null = null;
+    let rightHand: HandState | null = null;
+    for (const hand of hands) {
+      if (hand.side === 'right') rightHand = hand;
+      else leftHand = hand;
     }
-    if (hands.length === 1) {
-      const h0 = hands[0];
-      return h0.palmCenter.x < w * 0.5
-        ? { leftHand: h0, rightHand: null }
-        : { leftHand: null, rightHand: h0 };
-    }
-    return { leftHand: null, rightHand: null };
+    return { leftHand, rightHand };
   }
 
   update(dt: number, w: number, h: number, frame: SensorFrame) {
@@ -140,7 +136,7 @@ export class DualHandGame implements GameController {
     this.card.popAnim = Math.min(1, this.card.popAnim + dt * 5.5);
     this.card.timeLeft -= dt;
 
-    const { leftHand, rightHand } = this.splitHands(frame.hands, w);
+    const { leftHand, rightHand } = this.splitHands(frame.hands);
     const leftOk = Boolean(leftHand && leftHand.gesture === this.card.left);
     const rightOk = Boolean(rightHand && rightHand.gesture === this.card.right);
 
@@ -279,26 +275,36 @@ export class DualHandGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    const { leftHand, rightHand } = this.splitHands(frame.hands, w);
+    const { leftHand, rightHand } = this.splitHands(frame.hands);
     const leftOk = Boolean(leftHand && leftHand.gesture === this.card.left);
     const rightOk = Boolean(rightHand && rightHand.gesture === this.card.right);
     const fever = this.combo >= 5;
 
     // Subtle split center line
     ctx.save();
-    ctx.setLineDash([10, 10]);
+    ctx.lineCap = 'round';
+    ctx.setLineDash([12, 16]);
     ctx.beginPath();
-    ctx.moveTo(w * 0.5, 92);
-    ctx.lineTo(w * 0.5, h - 104);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
-    ctx.lineWidth = 3;
+    ctx.moveTo(w * 0.5, 96);
+    ctx.lineTo(w * 0.5, h - 108);
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 9;
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle = CANDY.cream;
+    ctx.lineWidth = 4.5;
+    ctx.stroke();
     ctx.restore();
 
-    // Independent skeletons for both hands
-    if (leftHand) drawHandSkeleton(ctx, leftHand, leftOk ? CANDY.mint : CANDY.sky, 0.82);
-    if (rightHand) drawHandSkeleton(ctx, rightHand, rightOk ? CANDY.mint : CANDY.pink, 0.82);
+    // One candy cursor per hand, colored by its stable side
+    if (leftHand) {
+      drawDebugSkeleton(ctx, leftHand, SIDE_COLORS.left);
+      drawHandCursor(ctx, leftHand.palmCenter, leftOk ? CANDY.mint : SIDE_COLORS.left, { radius: 15, emoji: leftOk ? '✓' : undefined });
+    }
+    if (rightHand) {
+      drawDebugSkeleton(ctx, rightHand, SIDE_COLORS.right);
+      drawHandCursor(ctx, rightHand.palmCenter, rightOk ? CANDY.mint : SIDE_COLORS.right, { radius: 15, emoji: rightOk ? '✓' : undefined });
+    }
 
     // Fever aura
     if (fever) {

@@ -1,5 +1,5 @@
 import { sfx } from '../audio/sfx';
-import { drawHandSkeleton, type Point2D } from '../vision/gestures';
+import type { Point2D } from '../vision/gestures';
 import {
   drawRuneIcon,
   recognizeRune,
@@ -7,6 +7,7 @@ import {
   RUNE_MAP,
   type RuneId,
 } from '../vision/runeRecognizer';
+import { drawDebugSkeleton, drawHandCursor, HandLink } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -71,6 +72,7 @@ export class FingerRuneGame implements GameController {
   private stillTime = 0;
   private lastTip: Point2D | null = null;
   private idleAnchor: Point2D | null = null;
+  private tipLink = new HandLink();
   private castCooldown = 0;
   private flashColor = '';
   private flashAlpha = 0;
@@ -95,8 +97,18 @@ export class FingerRuneGame implements GameController {
     this.stillTime = 0;
     this.lastTip = null;
     this.idleAnchor = null;
+    this.tipLink.reset();
     this.castCooldown = 0;
     this.flashAlpha = 0;
+  }
+
+  /** Throw away a half-drawn stroke without casting (hand lost, reacquired or teleported). */
+  private discardStroke() {
+    this.stroke = [];
+    this.drawing = false;
+    this.stillTime = 0;
+    this.lastTip = null;
+    this.idleAnchor = null;
   }
 
   private spawnMonster(w: number) {
@@ -245,6 +257,7 @@ export class FingerRuneGame implements GameController {
     }
 
     // Handle air-wand drawing with index finger tip
+    if (!this.tipLink.step(hand, hand.indexTip, w, h)) this.discardStroke();
     const stopPose = !hand.present || hand.gesture === 'fist' || hand.pinching;
     if (stopPose) {
       if (this.drawing) {
@@ -359,8 +372,7 @@ export class FingerRuneGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    // Subtle hand skeleton
-    drawHandSkeleton(ctx, hand, this.drawing ? CANDY.sun : CANDY.sky, 0.45);
+    drawDebugSkeleton(ctx, hand, this.drawing ? CANDY.sun : CANDY.sky);
 
     if (this.flashAlpha > 0) {
       ctx.save();
@@ -373,14 +385,17 @@ export class FingerRuneGame implements GameController {
     // Bottom glowing magic ward line
     const wardY = h - 108;
     ctx.save();
-    ctx.setLineDash([12, 8]);
+    ctx.lineCap = 'round';
+    ctx.setLineDash([14, 14]);
     ctx.beginPath();
-    ctx.moveTo(16, wardY);
-    ctx.lineTo(w - 16, wardY);
-    ctx.strokeStyle = 'rgba(255, 122, 107, 0.72)';
-    ctx.lineWidth = 4;
+    ctx.moveTo(20, wardY);
+    ctx.lineTo(w - 20, wardY);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 9;
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle = CANDY.coral;
+    ctx.lineWidth = 5;
+    ctx.stroke();
     ctx.restore();
 
     // Monsters + big unmistakable rune crests above their heads
@@ -456,16 +471,7 @@ export class FingerRuneGame implements GameController {
 
     // Magic wand cursor at index fingertip
     if (hand.present) {
-      const tip = hand.indexTip;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(tip.x, tip.y, this.drawing ? 14 : 10, 0, Math.PI * 2);
-      ctx.fillStyle = this.drawing ? CANDY.sun : CANDY.sky;
-      ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = INK;
-      ctx.stroke();
-      ctx.restore();
+      drawHandCursor(ctx, hand.indexTip, this.drawing ? CANDY.sun : CANDY.sky, { radius: this.drawing ? 14 : 11 });
     }
 
     // Combo badge

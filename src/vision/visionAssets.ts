@@ -137,9 +137,9 @@ export async function createHandLandmarker(
       baseOptions: { modelAssetBuffer: modelBytes, delegate },
       runningMode: 'VIDEO',
       numHands: initialNumHands,
-      minHandDetectionConfidence: 0.48,
-      minHandPresenceConfidence: 0.48,
-      minTrackingConfidence: 0.48,
+      minHandDetectionConfidence: 0.58,
+      minHandPresenceConfidence: 0.58,
+      minTrackingConfidence: 0.58,
     });
 
   try {
@@ -200,9 +200,9 @@ export async function createFaceLandmarker(
       numFaces: 1,
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: false,
-      minFaceDetectionConfidence: 0.45,
-      minFacePresenceConfidence: 0.45,
-      minTrackingConfidence: 0.45,
+      minFaceDetectionConfidence: 0.52,
+      minFacePresenceConfidence: 0.52,
+      minTrackingConfidence: 0.52,
     });
 
   try {

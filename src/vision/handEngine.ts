@@ -1,15 +1,10 @@
 import type { HandLandmarker, NormalizedLandmark } from '@mediapipe/tasks-vision';
-import { type CameraManager, getCoverTransform } from './camera';
+import { type CoverTransform, getCoverTransform } from './camera';
 import { classifyHandGesture, type HandState, type Point2D } from './gestures';
 import { OneEuroFilterArray } from './oneEuro';
 import { createHandLandmarker, type DelegateKind, type VisionLoadState } from './visionAssets';
 
 export type { DelegateKind, VisionLoadState } from './visionAssets';
-
-export interface InitProgress {
-  cameraReady: boolean;
-  load: VisionLoadState;
-}
 
 export interface VisionStats {
   fps: number;
@@ -31,6 +26,12 @@ export const EMPTY_HAND: HandState = {
 
 const PINCH_ON_RATIO = 0.36;
 const PINCH_OFF_RATIO = 0.48;
+/** A hand counts as lost after this long without a detection (shared with FaceEngine). */
+export const LOST_MS = 300;
+/** Palm moving farther than this fraction of min(w, h) in one frame is treated as a new hand. */
+const JUMP_FRAC = 0.3;
+
+type Side = 'left' | 'right';
 
 interface HandTrackerSlot {
   filter: OneEuroFilterArray;
@@ -38,19 +39,30 @@ interface HandTrackerSlot {
   outBuf: Float32Array;
   pinching: boolean;
   lastSeenAt: number;
-  lastCenterX: number;
+  palm: Point2D | null;
+  side: Side;
+  track: number;
   state: HandState;
 }
 
-function createSlot(): HandTrackerSlot {
+function createSlot(side: Side): HandTrackerSlot {
   return {
-    filter: new OneEuroFilterArray(42, 1.6, 5.2, 1.2),
+    filter: new OneEuroFilterArray(42, 1.25, 4.2, 1.0),
     rawBuf: new Float32Array(42),
     outBuf: new Float32Array(42),
     pinching: false,
     lastSeenAt: 0,
-    lastCenterX: -1,
+    palm: null,
+    side,
+    track: 0,
     state: { ...EMPTY_HAND },
+  };
+}
+
+function rawPalm(lm: NormalizedLandmark[], cover: CoverTransform): Point2D {
+  return {
+    x: cover.offsetX + (1 - (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5) * cover.renderedW,
+    y: cover.offsetY + ((lm[0].y + lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 5) * cover.renderedH,
   };
 }
 
@@ -59,7 +71,8 @@ export class HandEngine {
   private video: HTMLVideoElement | null = null;
   private numHands: 1 | 2 = 1;
 
-  private slots: [HandTrackerSlot, HandTrackerSlot] = [createSlot(), createSlot()];
+  private slots: [HandTrackerSlot, HandTrackerSlot] = [createSlot('left'), createSlot('right')];
+  private trackSeq = 0;
 
   private lastVideoTime = -1;
   private lastTs = 0;
@@ -67,7 +80,7 @@ export class HandEngine {
 
   /** Primary hand (hands[0]), kept for backward compatibility with single-hand games. */
   public state: HandState = { ...EMPTY_HAND };
-  /** All currently tracked hands, sorted left-to-right by screen X. */
+  /** All currently tracked hands, ordered by stable side label (left first). */
   public hands: HandState[] = [];
   public stats: VisionStats = { fps: 0, delegate: 'GPU' };
   public ready = false;
@@ -105,28 +118,10 @@ export class HandEngine {
     return this.loadPromise;
   }
 
-  /** Opens shared camera + ensures hand model is loaded in parallel. */
-  async init(
-    camera: CameraManager,
-    videoEl: HTMLVideoElement,
-    onProgress?: (p: InitProgress) => void,
-  ): Promise<void> {
+  /** Bind the (camera-gated) video element and make sure the model is loaded. */
+  async init(videoEl: HTMLVideoElement): Promise<void> {
     this.video = videoEl;
-    let cameraReady = camera.ready;
-    const report = () => onProgress?.({ cameraReady, load: this.load });
-    const unsubscribe = this.onLoadChange(report);
-
-    const camTask = (async () => {
-      await camera.ensureOpen(videoEl);
-      cameraReady = true;
-      report();
-    })();
-
-    try {
-      await Promise.all([camTask, this.preload()]);
-    } finally {
-      unsubscribe();
-    }
+    await this.preload();
     this.ready = true;
   }
 
@@ -134,9 +129,7 @@ export class HandEngine {
   async setNumHands(num: 1 | 2): Promise<void> {
     if (this.numHands === num) return;
     this.numHands = num;
-    if (num === 1) {
-      this.clearSlot(this.slots[1]);
-    }
+    if (num === 1) this.clearSlot(this.slots[1]);
     if (this.landmarker) {
       await this.landmarker.setOptions({ numHands: num });
     }
@@ -155,14 +148,7 @@ export class HandEngine {
 
     const now = performance.now();
     if (video.currentTime === this.lastVideoTime) {
-      let changed = false;
-      for (const slot of this.slots) {
-        if (slot.state.present && now - slot.lastSeenAt > 350) {
-          this.clearSlot(slot);
-          changed = true;
-        }
-      }
-      if (changed) this.syncOutputs();
+      if (this.expireSlots(now, [false, false])) this.syncOutputs();
       return this.state;
     }
 
@@ -186,99 +172,90 @@ export class HandEngine {
     this.stats.fps = this.fpsTimes.length;
 
     const detected = (result.landmarks ?? []).filter((lm) => lm && lm.length >= 21).slice(0, this.numHands);
-    if (detected.length === 0) {
-      for (const slot of this.slots) {
-        if (slot.state.present && now - slot.lastSeenAt > 220) {
-          this.clearSlot(slot);
-        }
-      }
-      this.syncOutputs();
-      return this.state;
-    }
-
     const cover = getCoverTransform(video, viewportW, viewportH);
+    const items = detected.map((lm) => ({ lm, palm: rawPalm(lm, cover) }));
+    const limit = Math.min(viewportW, viewportH) * JUMP_FRAC;
 
-    // Compute raw mirrored palm X for each detected hand so we match to filter slots consistently
-    const detItems = detected.map((lm) => {
-      const palmX =
-        cover.offsetX +
-        (1 - (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5) * cover.renderedW;
-      return { lm, palmX };
+    const assignment = this.assign(items.map((it) => it.palm), limit);
+    const used: [boolean, boolean] = [false, false];
+    const fresh: number[] = [];
+    assignment.forEach((slotIdx, itemIdx) => {
+      const slot = this.slots[slotIdx];
+      const item = items[itemIdx];
+      const isFresh = !slot.state.present || !slot.palm || Math.hypot(item.palm.x - slot.palm.x, item.palm.y - slot.palm.y) > limit;
+      if (isFresh) {
+        slot.filter.reset();
+        slot.pinching = false;
+        slot.track = ++this.trackSeq;
+        fresh.push(slotIdx);
+      }
+      slot.palm = item.palm;
+      this.updateSlot(slot, item.lm, cover, dtSec, now);
+      used[slotIdx] = true;
     });
 
-    const assignedSlots = new Set<number>();
-
-    if (this.numHands === 1 || detItems.length === 1) {
-      const item = detItems[0];
-      // Pick closest active slot (or slot 0 if neither active)
-      let targetIdx = 0;
-      if (this.numHands === 2) {
-        const s0 = this.slots[0];
-        const s1 = this.slots[1];
-        if (s0.state.present && s1.state.present) {
-          targetIdx =
-            Math.abs(item.palmX - s0.lastCenterX) <= Math.abs(item.palmX - s1.lastCenterX) ? 0 : 1;
-        } else if (s1.state.present && !s0.state.present && Math.abs(item.palmX - s1.lastCenterX) < 160) {
-          targetIdx = 1;
-        }
-      }
-      this.updateSlot(this.slots[targetIdx], item.lm, item.palmX, cover, dtSec, now);
-      assignedSlots.add(targetIdx);
-    } else {
-      // 2 hands detected: choose assignment minimizing total screen-X jump from previous slots
-      const [d0, d1] = detItems;
-      const s0 = this.slots[0];
-      const s1 = this.slots[1];
-      let pairNormal = true;
-      if (s0.lastCenterX >= 0 && s1.lastCenterX >= 0) {
-        const costNormal =
-          Math.abs(d0.palmX - s0.lastCenterX) + Math.abs(d1.palmX - s1.lastCenterX);
-        const costSwap =
-          Math.abs(d0.palmX - s1.lastCenterX) + Math.abs(d1.palmX - s0.lastCenterX);
-        pairNormal = costNormal <= costSwap;
-      } else {
-        // Default: leftmost hand -> slot 0, rightmost hand -> slot 1
-        pairNormal = d0.palmX <= d1.palmX;
-      }
-
-      if (pairNormal) {
-        this.updateSlot(s0, d0.lm, d0.palmX, cover, dtSec, now);
-        this.updateSlot(s1, d1.lm, d1.palmX, cover, dtSec, now);
-      } else {
-        this.updateSlot(s0, d1.lm, d1.palmX, cover, dtSec, now);
-        this.updateSlot(s1, d0.lm, d0.palmX, cover, dtSec, now);
-      }
-      assignedSlots.add(0);
-      assignedSlots.add(1);
-    }
-
-    // Expire any unassigned slot past grace period
-    for (let idx = 0; idx < 2; idx++) {
-      if (!assignedSlots.has(idx)) {
-        const slot = this.slots[idx];
-        if (slot.state.present && now - slot.lastSeenAt > 220) {
-          this.clearSlot(slot);
-        }
-      }
-    }
-
+    this.expireSlots(now, used);
+    if (fresh.length) this.labelSides(fresh, viewportW);
     this.syncOutputs();
     return this.state;
+  }
+
+  /** Nearest-previous-palm matching; unmatched or far-away detections become new acquisitions. */
+  private assign(palms: Point2D[], limit: number): number[] {
+    if (palms.length === 0) return [];
+    if (this.numHands === 1) return [0];
+    const penalty = limit * 1.5;
+    const cost = (p: Point2D, idx: number) => {
+      const slot = this.slots[idx];
+      if (!slot.state.present || !slot.palm) return penalty;
+      const d = Math.hypot(p.x - slot.palm.x, p.y - slot.palm.y);
+      return d <= limit ? d : penalty;
+    };
+    if (palms.length === 1) {
+      return [cost(palms[0], 1) < cost(palms[0], 0) ? 1 : 0];
+    }
+    const straight = cost(palms[0], 0) + cost(palms[1], 1);
+    const swapped = cost(palms[0], 1) + cost(palms[1], 0);
+    return swapped < straight ? [1, 0] : [0, 1];
+  }
+
+  private labelSides(fresh: number[], viewportW: number) {
+    const [s0, s1] = this.slots;
+    const bothPresent = this.numHands === 2 && s0.state.present && s1.state.present && s0.palm && s1.palm;
+    if (bothPresent) {
+      const leftIsS0 = s0.palm!.x <= s1.palm!.x;
+      s0.side = leftIsS0 ? 'left' : 'right';
+      s1.side = leftIsS0 ? 'right' : 'left';
+    } else {
+      for (const idx of fresh) {
+        const slot = this.slots[idx];
+        slot.side = slot.palm && slot.palm.x < viewportW / 2 ? 'left' : 'right';
+      }
+    }
+    for (const slot of this.slots) {
+      if (slot.state.present) slot.state = { ...slot.state, side: slot.side, track: slot.track };
+    }
+  }
+
+  private expireSlots(now: number, used: [boolean, boolean]): boolean {
+    let changed = false;
+    this.slots.forEach((slot, idx) => {
+      if (!used[idx] && slot.state.present && now - slot.lastSeenAt > LOST_MS) {
+        this.clearSlot(slot);
+        changed = true;
+      }
+    });
+    return changed;
   }
 
   private updateSlot(
     slot: HandTrackerSlot,
     lm: NormalizedLandmark[],
-    rawPalmX: number,
-    cover: { renderedW: number; renderedH: number; offsetX: number; offsetY: number },
+    cover: CoverTransform,
     dtSec: number,
     now: number,
   ) {
-    if (now - slot.lastSeenAt > 300) {
-      slot.filter.reset();
-    }
     slot.lastSeenAt = now;
-    slot.lastCenterX = rawPalmX;
 
     for (let i = 0; i < 21; i++) {
       slot.rawBuf[i * 2] = cover.offsetX + (1 - lm[i].x) * cover.renderedW;
@@ -321,12 +298,14 @@ export class HandEngine {
       pinching: slot.pinching,
       indexTip: pts[8],
       palmCenter,
+      track: slot.track,
+      side: slot.side,
     };
   }
 
   private clearSlot(slot: HandTrackerSlot) {
     slot.pinching = false;
-    slot.lastCenterX = -1;
+    slot.palm = null;
     slot.filter.reset();
     slot.state = { ...EMPTY_HAND };
   }
@@ -335,15 +314,17 @@ export class HandEngine {
     const active: HandState[] = [];
     if (this.slots[0].state.present) active.push(this.slots[0].state);
     if (this.numHands === 2 && this.slots[1].state.present) active.push(this.slots[1].state);
-    // Sort left-to-right by screen X
-    active.sort((a, b) => a.palmCenter.x - b.palmCenter.x);
+    active.sort((a, b) => (a.side === b.side ? 0 : a.side === 'left' ? -1 : 1));
     this.hands = active;
     this.state = active[0] ?? { ...EMPTY_HAND };
   }
 
+  /** Drop all tracked hands and filters so no state leaks across games, restarts or resumes. */
   resetTracking() {
     this.clearSlot(this.slots[0]);
     this.clearSlot(this.slots[1]);
+    this.lastVideoTime = -1;
+    this.lastTs = 0;
     this.syncOutputs();
   }
 }
