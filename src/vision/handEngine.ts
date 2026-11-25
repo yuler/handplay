@@ -22,6 +22,7 @@ export const EMPTY_HAND: HandState = {
   pinching: false,
   indexTip: { x: 0, y: 0 },
   palmCenter: { x: 0, y: 0 },
+  sample: 0,
 };
 
 const PINCH_ON_RATIO = 0.36;
@@ -82,6 +83,8 @@ export class HandEngine {
   public state: HandState = { ...EMPTY_HAND };
   /** All currently tracked hands, ordered by stable side label (left first). */
   public hands: HandState[] = [];
+  /** One step per video frame passed to the landmarker. Reused frames do not advance it. */
+  private sampleSeq = 0;
   public stats: VisionStats = { fps: 0, delegate: 'GPU' };
   public ready = false;
   public load: VisionLoadState = { stage: 'idle', loaded: 0, total: 1 };
@@ -154,6 +157,7 @@ export class HandEngine {
 
     const dtSec = this.lastTs > 0 ? (now - this.lastTs) / 1000 : 1 / 30;
     this.lastVideoTime = video.currentTime;
+    this.sampleSeq++;
     const ts = now <= this.lastTs ? this.lastTs + 1 : now;
     this.lastTs = ts;
 
@@ -190,7 +194,7 @@ export class HandEngine {
         fresh.push(slotIdx);
       }
       slot.palm = item.palm;
-      this.updateSlot(slot, item.lm, cover, dtSec, now);
+      this.updateSlot(slot, item.lm, cover, dtSec, now, this.sampleSeq);
       used[slotIdx] = true;
     });
 
@@ -254,6 +258,7 @@ export class HandEngine {
     cover: CoverTransform,
     dtSec: number,
     now: number,
+    sample: number,
   ) {
     slot.lastSeenAt = now;
 
@@ -300,6 +305,7 @@ export class HandEngine {
       palmCenter,
       track: slot.track,
       side: slot.side,
+      sample,
     };
   }
 
