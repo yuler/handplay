@@ -1,3 +1,33 @@
+import { GAMES, LOBBY_SECTIONS, type GameMeta } from '../games/catalog';
+
+export function tagsHtml(g: GameMeta): string {
+  return [`<span class="mini-tag sensor">${g.sensorTag}</span>`, ...g.tags.map((t) => `<span class="mini-tag">${t}</span>`)].join('');
+}
+
+function gameCardHtml(g: GameMeta): string {
+  return `
+            <button class="game-card ${g.theme}" data-game="${g.id}">
+              <span id="best-${g.id}" class="best-sticker">✨ 来试试</span>
+              <div class="game-icon">${g.icon}</div>
+              <div class="game-meta">
+                <h2>${g.title}</h2>
+                <p>${g.desc}</p>
+                <div class="game-tags">${tagsHtml(g)}</div>
+              </div>
+            </button>`;
+}
+
+function lobbySectionsHtml(): string {
+  return LOBBY_SECTIONS.map(
+    (sec) => `
+        <div class="section-group">
+          <div class="section-label">${sec.label}</div>
+          <div class="card-list">${GAMES.filter((g) => g.sensor === sec.sensor).map(gameCardHtml).join('')}
+          </div>
+        </div>`,
+  ).join('');
+}
+
 export function mascotSvg(extraClass = ''): string {
   return `
     <div class="mascot ${extraClass}" aria-hidden="true">
@@ -45,148 +75,7 @@ export const APP_HTML = `
 
       <div id="prefetch-chip" class="prefetch-chip">🧠 正在准备小手识别…</div>
 
-      <div class="lobby-sections">
-        <div class="section-group">
-          <div class="section-label">✋ 单手隔空玩</div>
-          <div class="card-list">
-            <button class="game-card kitty" data-game="kitty-chase">
-              <span id="best-kitty-chase" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">🐱</div>
-              <div class="game-meta">
-                <h2>小花猫逗猫乐</h2>
-                <p>挥手变出羽毛逗猫棒，逗三花小花猫抓鱼扑蝴蝶！摸摸猫头还能双倍得分～</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">✋ 单手</span>
-                  <span class="mini-tag">⏱ 50 秒</span>
-                  <span class="mini-tag">🐱 摸头双倍</span>
-                </div>
-              </div>
-            </button>
-
-            <button class="game-card rush" data-game="gesture-rush">
-              <span id="best-gesture-rush" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">✌️</div>
-              <div class="game-meta">
-                <h2>闪电结印</h2>
-                <p>看图比手势，越快分越高！连对 5 次狂热翻倍，还有手指算术题～</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">✋ 单手</span>
-                  <span class="mini-tag">⏱ 45 秒</span>
-                  <span class="mini-tag">✊☝️✌️🖐️👍👌</span>
-                </div>
-              </div>
-            </button>
-
-            <button class="game-card sling" data-game="air-slingshot">
-              <span id="best-air-slingshot" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">🤏</div>
-              <div class="game-meta">
-                <h2>空气弹弓</h2>
-                <p>捏住拇指和食指往回拉，松手发射！打靶子和 ⭐，别碰 💣</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">✋ 单手</span>
-                  <span class="mini-tag">⏱ 60 秒</span>
-                  <span class="mini-tag">🤏 捏合拉弓</span>
-                </div>
-              </div>
-            </button>
-
-            <button class="game-card rune" data-game="finger-rune">
-              <span id="best-finger-rune" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">☝️</div>
-              <div class="game-meta">
-                <h2>一指画符</h2>
-                <p>食指当魔法棒！隔空画出 — | ○ ∧ ∨ 符咒，闪电连锁秒杀同符号妖怪～</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">✋ 单手</span>
-                  <span class="mini-tag">⏱ 50 秒</span>
-                  <span class="mini-tag">⚡ 连锁施法</span>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <div class="section-group">
-          <div class="section-label">😜 完全解放双手（脸部体感）</div>
-          <div class="card-list">
-            <button class="game-card animal" data-game="animal-face">
-              <span id="best-animal-face" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">🎭</div>
-              <div class="game-meta">
-                <h2>萌宠变脸秀</h2>
-                <p>学小狮子张大嘴、小河豚鼓腮、小狗歪头！脸上实时戴萌宠贴纸还能留念拍照～</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">😜 纯脸部</span>
-                  <span class="mini-tag">⏱ 45 秒</span>
-                  <span class="mini-tag">📸 变身纪念照</span>
-                </div>
-              </div>
-            </button>
-
-            <button class="game-card munch" data-game="mouth-munch">
-              <span id="best-mouth-munch" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">😮</div>
-              <div class="game-meta">
-                <h2>大嘴吞星</h2>
-                <p>歪头移动、张大嘴吸星星水果、眨眼放双眼激光碎冰块、鼓腮开护盾！</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">😜 纯脸部</span>
-                  <span class="mini-tag">⏱ 50 秒</span>
-                  <span class="mini-tag">👁️ 眨眼激光</span>
-                </div>
-              </div>
-            </button>
-
-            <button class="game-card noblink" data-game="no-blink">
-              <span id="best-no-blink" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">👁️</div>
-              <div class="game-meta">
-                <h2>别眨眼 / 憋笑</h2>
-                <p>飞虫袭眼 + 冷笑话轰炸！局内一键切换双模式，破功瞬间自动抓拍留念！</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">😜 纯脸部</span>
-                  <span class="mini-tag">📸 破功抓拍</span>
-                  <span class="mini-tag">😂 憋笑挑战</span>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <div class="section-group">
-          <div class="section-label">🙌 桌面支架挑战（双手同屏）</div>
-          <div class="card-list">
-            <button class="game-card bubble" data-game="bubble-pop">
-              <span id="best-bubble-pop" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">🫧</div>
-              <div class="game-meta">
-                <h2>彩虹泡泡乐团</h2>
-                <p>伸手戳爆彩虹泡泡弹音乐，双手齐拍黄金大泡泡！单手双手或亲子同屏都能玩～</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">🙌 双手 / 亲子</span>
-                  <span class="mini-tag">⏱ 50 秒</span>
-                  <span class="mini-tag">🎵 音乐泡泡</span>
-                </div>
-              </div>
-            </button>
-
-            <button class="game-card dual" data-game="dual-hand">
-              <span id="best-dual-hand" class="best-sticker">✨ 来试试</span>
-              <div class="game-icon">🙌</div>
-              <div class="game-meta">
-                <h2>左右手快闪</h2>
-                <p>手机靠在桌上，同时举起左右手比出不同手势，还有突发「左右互换」！</p>
-                <div class="game-tags">
-                  <span class="mini-tag sensor">🙌 双手支架</span>
-                  <span class="mini-tag">⏱ 45 秒</span>
-                  <span class="mini-tag">🔀 左右互换</span>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
+      <div class="lobby-sections">${lobbySectionsHtml()}</div>
 
       <p class="privacy-note">
         给家长：对着前置摄像头隔空开玩，手势/脸部都能玩。<br/>
@@ -205,10 +94,36 @@ export const APP_HTML = `
         </div>
         <div id="loader-bar" class="progress-bar"><div id="loader-fill" class="progress-fill"></div></div>
         <div id="loader-pct" class="loader-pct">0%</div>
-        <div id="loader-error" class="error-msg" style="display:none"></div>
-        <button id="loader-back" class="btn btn-primary" style="display:none;width:100%">🏠 回到大厅</button>
       </div>
     </div>
+
+    <!-- Ready card (direct open / refresh of /play/<id>) -->
+    <div id="ready" class="overlay soft hidden">
+      <div id="ready-card" class="ready-card">
+        <div id="ready-icon" class="game-icon ready-icon"></div>
+        <h2 id="ready-title" class="ready-title"></h2>
+        <p id="ready-desc" class="ready-desc"></p>
+        <div id="ready-tags" class="game-tags ready-tags"></div>
+        <button id="ready-start" class="btn btn-primary btn-start">▶ 开始</button>
+        <button id="ready-home" class="btn-link">🏠 回大厅</button>
+      </div>
+    </div>
+
+    <!-- Camera / start error -->
+    <div id="cam-error" class="overlay soft hidden">
+      <div class="loader-box">
+        ${mascotSvg('bounce')}
+        <div id="err-title" class="loader-title"></div>
+        <div id="err-msg" class="error-msg"></div>
+        <div class="btn-col">
+          <button id="err-retry" class="btn btn-primary"></button>
+          <button id="err-home" class="btn btn-ghost">🏠 回大厅</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sensor-prompt" class="sensor-prompt hidden"></div>
+    <div id="countdown" class="countdown hidden"><span id="countdown-num" class="countdown-num"></span></div>
 
     <!-- Result -->
     <div id="result" class="overlay soft hidden">

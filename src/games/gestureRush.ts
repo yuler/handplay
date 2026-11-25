@@ -1,10 +1,10 @@
 import { sfx } from '../audio/sfx';
 import {
-  drawHandSkeleton,
   GESTURE_LIST,
   GESTURE_MAP,
   type GestureId,
 } from '../vision/gestures';
+import { drawDebugSkeleton, drawHandCursor } from './cursor';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -209,8 +209,9 @@ export class GestureRushGame implements GameController {
           ? CANDY.sun
           : CANDY.sky;
 
-    // 1. Hand skeleton overlay
-    drawHandSkeleton(ctx, hand, accent, 0.85);
+    // 1. Hand cursor at palm center
+    drawDebugSkeleton(ctx, hand, accent);
+    if (hand.present) drawHandCursor(ctx, hand.palmCenter, accent, { radius: 15 });
 
     // 2. Fever screen border aura
     if (fever) {

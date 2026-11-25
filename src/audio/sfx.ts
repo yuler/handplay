@@ -142,6 +142,15 @@ class SoundEngine {
     this.tone(f * 0.5, f * 0.5, 0.04, 'triangle', 0.05);
   }
 
+  /** Soft resume countdown: 3-2-1 ticks, then a gentle "go" */
+  resumeTick() {
+    this.tone(660, 660, 0.08, 'sine', 0.07);
+  }
+
+  resumeGo() {
+    this.tone(784, 1046.5, 0.16, 'triangle', 0.09);
+  }
+
   // ---- Gameplay ----
   hit(combo = 1) {
     // Pentatonic climbing pitch

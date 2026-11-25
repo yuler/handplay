@@ -1,5 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawHandSkeleton, type Point2D } from '../vision/gestures';
+import type { Point2D } from '../vision/gestures';
+import { drawDebugSkeleton, drawHandCursor, HandLink } from './cursor';
 import { FxSystem } from './particles';
 import { cartoonBall, CANDY, EMOJI_FONT, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -64,6 +65,7 @@ export class AirSlingshotGame implements GameController {
   private pullCurrent: Point2D = { x: 0, y: 0 };
   /** Keep short history of pull vectors so release-frame finger jitter doesn't throw aim off */
   private pullHistory: Point2D[] = [];
+  private pinchLink = new HandLink();
   private lastTickTension = 0;
 
   constructor(private onFinish: (summary: GameOverSummary) => void) {}
@@ -81,6 +83,7 @@ export class AirSlingshotGame implements GameController {
     this.orbs = [];
     this.pulling = false;
     this.pullHistory = [];
+    this.pinchLink.reset();
     this.spawnCooldown = 0;
   }
 
@@ -199,6 +202,12 @@ export class AirSlingshotGame implements GameController {
 
     const anchor = this.getAnchor(w, h);
     const maxPull = this.getMaxPull(w, h);
+
+    // Hand lost, reacquired or teleported: drop the elastic instead of firing a ghost shot
+    if (!this.pinchLink.step(hand, hand.pinchPos, w, h) && this.pulling) {
+      this.pulling = false;
+      this.pullHistory = [];
+    }
 
     // Handle pinch-to-pull slingshot
     if (hand.present && hand.pinching) {
@@ -346,8 +355,7 @@ export class AirSlingshotGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    // 1. Subtle hand skeleton
-    drawHandSkeleton(ctx, hand, this.pulling ? CANDY.sun : CANDY.sky, 0.55);
+    drawDebugSkeleton(ctx, hand, this.pulling ? CANDY.sun : CANDY.sky);
 
     // 2. Targets: cream bubble, thick candy ring, ink outline
     for (const t of this.targets) {
@@ -392,7 +400,7 @@ export class AirSlingshotGame implements GameController {
       const { vx, vy, tension } = this.computeLaunchVel(anchor, pocket, maxPull);
       if (tension > 0.16 && vy < -120) {
         ctx.save();
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.strokeStyle = INK;
         for (let step = 1; step <= 14; step++) {
           const t = step * 0.048;
@@ -403,7 +411,7 @@ export class AirSlingshotGame implements GameController {
           else if (px > w - 15) px = (w - 15) * 2 - px;
           ctx.globalAlpha = Math.max(0.25, 1 - step * 0.055);
           ctx.beginPath();
-          ctx.arc(px, py, Math.max(3, 7 - step * 0.28), 0, Math.PI * 2);
+          ctx.arc(px, py, Math.max(4, 8 - step * 0.28), 0, Math.PI * 2);
           ctx.fillStyle = step % 2 ? CANDY.white : CANDY.sun;
           ctx.fill();
           ctx.stroke();
@@ -435,10 +443,10 @@ export class AirSlingshotGame implements GameController {
     ctx.lineTo(pocket.x, pocket.y);
     ctx.lineTo(rightFork.x, rightFork.y);
     ctx.strokeStyle = INK;
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 12;
     ctx.stroke();
     ctx.strokeStyle = this.pulling ? CANDY.coral : CANDY.pink;
-    ctx.lineWidth = 4.5;
+    ctx.lineWidth = 6.5;
     ctx.stroke();
 
     // Ball in slingshot pocket
@@ -462,21 +470,10 @@ export class AirSlingshotGame implements GameController {
 
     // 5. Pinch cursor ring on the user's real thumb+index midpoint
     if (hand.present) {
-      ctx.save();
-      const r = this.pulling ? 18 : 26;
-      ctx.beginPath();
-      ctx.arc(hand.pinchPos.x, hand.pinchPos.y, r, 0, Math.PI * 2);
-      ctx.strokeStyle = INK;
-      ctx.lineWidth = 8;
-      ctx.stroke();
-      ctx.strokeStyle = this.pulling ? CANDY.sun : CANDY.white;
-      ctx.lineWidth = 4.5;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(hand.pinchPos.x, hand.pinchPos.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = CANDY.coral;
-      ctx.fill();
-      ctx.restore();
+      drawHandCursor(ctx, hand.pinchPos, this.pulling ? CANDY.sun : CANDY.white, {
+        radius: 15,
+        pinching: hand.pinching,
+      });
     }
 
     // 6. Live bottom guidance pill

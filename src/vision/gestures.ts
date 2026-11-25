@@ -45,6 +45,10 @@ export interface HandState {
   indexTip: Point2D;
   /** Palm center in screen px */
   palmCenter: Point2D;
+  /** Increments every time a hand is (re)acquired; strokes must not connect across tracks */
+  track?: number;
+  /** Stable screen side label, only reassigned when a hand is newly acquired */
+  side?: 'left' | 'right';
 }
 
 const TIPS = [4, 8, 12, 16, 20] as const;

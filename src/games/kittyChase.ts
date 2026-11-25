@@ -1,5 +1,5 @@
 import { sfx } from '../audio/sfx';
-import { drawHandSkeleton } from '../vision/gestures';
+import { drawDebugSkeleton, HandLink } from './cursor';
 import { drawCalicoKitten, drawCatWand } from './kittyArt';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
@@ -65,6 +65,7 @@ export class KittyChaseGame implements GameController {
   private wandX = 0;
   private wandY = 0;
   private wandInit = false;
+  private palmLink = new HandLink();
   private lastBellAt = 0;
 
   // Entities
@@ -95,6 +96,7 @@ export class KittyChaseGame implements GameController {
     this.happyTimer = 0;
     this.petProgress = 0;
     this.wandInit = false;
+    this.palmLink.reset();
     this.treats = [];
     this.puddles = [];
     this.treatCooldown = 0.35;
@@ -221,7 +223,8 @@ export class KittyChaseGame implements GameController {
         : hand.indexTip
       : null;
 
-    // Smooth spring for dangling feather bell
+    // Smooth spring for dangling feather bell; snap (never sweep) after loss or a tracking jump
+    if (!this.palmLink.step(hand, hand.palmCenter, w, h)) this.wandInit = false;
     if (targetTip) {
       if (!this.wandInit) {
         this.wandX = targetTip.x;
@@ -425,17 +428,20 @@ export class KittyChaseGame implements GameController {
     const floorTop = groundY + 34;
     ctx.fillStyle = 'rgba(63, 212, 162, 0.34)';
     ctx.fillRect(0, floorTop, w, h - floorTop);
+    ctx.save();
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(0, floorTop);
-    ctx.lineTo(w, floorTop);
-    ctx.lineWidth = 4;
+    ctx.moveTo(-10, floorTop);
+    ctx.lineTo(w + 10, floorTop);
+    ctx.lineWidth = 9;
     ctx.strokeStyle = INK;
     ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = CANDY.mint;
+    ctx.stroke();
+    ctx.restore();
 
-    // Subtle hand skeleton
-    if (frame.hand.present) {
-      drawHandSkeleton(ctx, frame.hand, CANDY.sun, 0.35);
-    }
+    drawDebugSkeleton(ctx, frame.hand, CANDY.sun);
 
     // Draw puddles on the floor
     for (const p of this.puddles) {

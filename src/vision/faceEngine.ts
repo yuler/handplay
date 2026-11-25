@@ -1,7 +1,8 @@
 import type { FaceLandmarker } from '@mediapipe/tasks-vision';
-import { type CameraManager, getCoverTransform } from './camera';
+import { DEBUG } from '../debug';
+import { getCoverTransform } from './camera';
 import type { Point2D } from './gestures';
-import type { InitProgress, VisionStats } from './handEngine';
+import { LOST_MS, type VisionStats } from './handEngine';
 import { OneEuroFilterArray } from './oneEuro';
 import { createFaceLandmarker, type VisionLoadState } from './visionAssets';
 
@@ -15,7 +16,7 @@ export interface FaceState {
   rightEyePos: Point2D;
   /** Distance between temples/cheekbones in screen px */
   faceWidth: number;
-  /** Lightweight face oval contour points for AR overlay */
+  /** Face oval contour points (only filled in debug mode) */
   contour: Point2D[];
   /** Head roll (tilt left/right), normalized -1..1 (positive = tilted right on screen) */
   roll: number;
@@ -51,7 +52,7 @@ export const EMPTY_FACE: FaceState = {
   browUp: 0,
 };
 
-// Lightweight subset of MediaPipe FaceMesh oval indices (18 points around perimeter)
+// MediaPipe FaceMesh face oval, in perimeter order
 const OVAL_IDX = [
   10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152,
   148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
@@ -70,7 +71,7 @@ export class FaceEngine {
   private video: HTMLVideoElement | null = null;
 
   // Filter 6 key anchor points: nose, mouth, leftEye, rightEye, leftCheek, rightCheek (12 floats)
-  private filter = new OneEuroFilterArray(12, 1.8, 4.2, 1.2);
+  private filter = new OneEuroFilterArray(12, 1.4, 3.4, 1.0);
   private rawBuf = new Float32Array(12);
   private outBuf = new Float32Array(12);
 
@@ -115,28 +116,19 @@ export class FaceEngine {
     return this.loadPromise;
   }
 
-  async init(
-    camera: CameraManager,
-    videoEl: HTMLVideoElement,
-    onProgress?: (p: InitProgress) => void,
-  ): Promise<void> {
+  /** Bind the (camera-gated) video element and make sure the model is loaded. */
+  async init(videoEl: HTMLVideoElement): Promise<void> {
     this.video = videoEl;
-    let cameraReady = camera.ready;
-    const report = () => onProgress?.({ cameraReady, load: this.load });
-    const unsubscribe = this.onLoadChange(report);
-
-    const camTask = (async () => {
-      await camera.ensureOpen(videoEl);
-      cameraReady = true;
-      report();
-    })();
-
-    try {
-      await Promise.all([camTask, this.preload()]);
-    } finally {
-      unsubscribe();
-    }
+    await this.preload();
     this.ready = true;
+  }
+
+  /** Drop tracked face + filters so no state leaks across games, restarts or resumes. */
+  reset() {
+    this.clearFace();
+    this.lastSeenAt = 0;
+    this.lastVideoTime = -1;
+    this.lastTs = 0;
   }
 
   update(viewportW: number, viewportH: number): FaceState {
@@ -148,7 +140,7 @@ export class FaceEngine {
 
     const now = performance.now();
     if (video.currentTime === this.lastVideoTime) {
-      if (this.state.present && now - this.lastSeenAt > 380) {
+      if (this.state.present && now - this.lastSeenAt > LOST_MS) {
         this.clearFace();
       }
       return this.state;
@@ -175,7 +167,7 @@ export class FaceEngine {
 
     const lm = result.faceLandmarks?.[0];
     if (!lm || lm.length < 468) {
-      if (now - this.lastSeenAt > 250) {
+      if (this.state.present && now - this.lastSeenAt > LOST_MS) {
         this.clearFace();
       }
       return this.state;
@@ -187,7 +179,7 @@ export class FaceEngine {
       y: cover.offsetY + lm[idx].y * cover.renderedH,
     });
 
-    const isFresh = now - this.lastSeenAt > 320;
+    const isFresh = !this.state.present || now - this.lastSeenAt > LOST_MS;
     if (isFresh) this.filter.reset();
     this.lastSeenAt = now;
 
@@ -268,8 +260,8 @@ export class FaceEngine {
     const kExpr = isFresh ? 1 : 0.5;
 
     const contour: Point2D[] = [];
-    for (let i = 0; i < OVAL_IDX.length; i += 2) {
-      contour.push(mapPt(OVAL_IDX[i]));
+    if (DEBUG) {
+      for (const idx of OVAL_IDX) contour.push(mapPt(idx));
     }
 
     this.state = {
@@ -301,7 +293,7 @@ export class FaceEngine {
 }
 
 /**
- * Lightweight cartoon-neon AR face overlay (face oval, eye reticles, mouth ring).
+ * Lightweight cartoon AR face overlay (eye reticles, mouth ring; face oval only in debug mode).
  */
 export function drawFaceOverlay(
   ctx: CanvasRenderingContext2D,
@@ -315,8 +307,7 @@ export function drawFaceOverlay(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Soft dashed face contour
-  if (face.contour.length > 4) {
+  if (DEBUG && face.contour.length > 4) {
     ctx.beginPath();
     ctx.moveTo(face.contour[0].x, face.contour[0].y);
     for (let i = 1; i < face.contour.length; i++) {

@@ -1,0 +1,150 @@
+/* Ready card, camera error, sensor prompt and resume countdown (imported after style.css) */
+.ready-card {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  padding: 28px 22px 18px;
+  border: 4px solid var(--ink);
+  border-radius: 30px;
+  background: var(--white);
+  box-shadow: 0 8px 0 var(--ink);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: pop-in 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.ready-icon {
+  width: 96px;
+  height: 96px;
+  font-size: 56px;
+  border-radius: 28px;
+  box-shadow: 0 5px 0 var(--ink);
+}
+
+.ready-title {
+  margin: 18px 0 0;
+  font-size: 30px;
+  font-weight: 900;
+  color: var(--coral);
+  -webkit-text-stroke: 1.5px var(--ink);
+  paint-order: stroke fill;
+}
+
+.ready-desc {
+  margin: 10px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.ready-tags {
+  justify-content: center;
+  margin: 12px 0 4px;
+}
+
+.btn-start {
+  width: 100%;
+  flex: none;
+  min-height: 68px;
+  margin-top: 18px;
+  font-size: 26px;
+  letter-spacing: 0.12em;
+  animation: hop 1.4s ease-in-out infinite;
+}
+
+.btn-link {
+  margin-top: 14px;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.btn-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-col .btn {
+  flex: none;
+  width: 100%;
+}
+
+.sensor-prompt {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 25;
+  transform: translate(-50%, -50%);
+  padding: 16px 24px;
+  border: 4px solid var(--ink);
+  border-radius: 999px;
+  background: var(--sun);
+  box-shadow: 0 6px 0 var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: prompt-bob 1.2s ease-in-out infinite;
+}
+
+.sensor-prompt.hidden,
+.countdown.hidden {
+  display: none;
+}
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  display: grid;
+  place-items: center;
+  background: rgba(191, 232, 255, 0.45);
+  pointer-events: none;
+}
+
+.countdown-num {
+  font-size: 128px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--sun);
+  -webkit-text-stroke: 5px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 8px 0 var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown-num.go {
+  font-size: 84px;
+  color: var(--mint);
+}
+
+.countdown-num.pop {
+  animation: count-pop 0.6s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes prompt-bob {
+  0%, 100% { transform: translate(-50%, -50%); }
+  50% { transform: translate(-50%, calc(-50% - 8px)); }
+}
+
+@keyframes count-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-start,
+  .sensor-prompt,
+  .ready-card,
+  .countdown-num.pop {
+    animation: none;
+  }
+}

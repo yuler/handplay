@@ -493,8 +493,11 @@ export class MouthMunchGame implements GameController {
         ctx.beginPath();
         ctx.moveTo(bx, beam.yStart);
         ctx.lineTo(bx, 0);
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 24 * a;
+        ctx.stroke();
         ctx.strokeStyle = CANDY.sky;
-        ctx.lineWidth = 18 * a;
+        ctx.lineWidth = 17 * a;
         ctx.stroke();
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 6 * a;
