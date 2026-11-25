@@ -292,14 +292,36 @@ export class FaceEngine {
   }
 }
 
+function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const rad = i % 2 === 0 ? r : r * 0.38;
+    const a = -Math.PI / 2 + (i * Math.PI) / 4;
+    const px = Math.cos(a) * rad;
+    const py = Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#3a2d5c';
+  ctx.stroke();
+  ctx.restore();
+}
+
 /**
- * Lightweight cartoon AR face overlay (eye reticles, mouth ring; face oval only in debug mode).
+ * Cartoon face reactions: a spark when an eye blinks, bubbles when the mouth opens.
+ * The face oval stays a debug-only aid. Quiet while the face is still.
  */
 export function drawFaceOverlay(
   ctx: CanvasRenderingContext2D,
   face: FaceState,
-  accent = '#5cc8ff',
-  alpha = 0.55,
+  accent = '#ffc93c',
+  alpha = 1,
 ) {
   if (!face.present) return;
   ctx.save();
@@ -321,34 +343,78 @@ export function drawFaceOverlay(
     ctx.setLineDash([]);
   }
 
-  // Eye reticles
-  const eyeR = Math.max(9, face.faceWidth * 0.085);
-  for (const [pos, blink] of [
-    [face.leftEyePos, face.blinkL],
-    [face.rightEyePos, face.blinkR],
-  ] as const) {
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y, eyeR, Math.max(2, eyeR * (1 - blink * 0.85)), 0, 0, Math.PI * 2);
-    ctx.strokeStyle = blink > 0.55 ? '#ffc93c' : accent;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
+  const now = performance.now() * 0.001;
+  const eyeR = Math.max(8, face.faceWidth * 0.06);
+  const eyes: Array<[typeof face.leftEyePos, number, number]> = [
+    [face.leftEyePos, face.blinkL, -1],
+    [face.rightEyePos, face.blinkR, 1],
+  ];
+  for (const [pos, blink, side] of eyes) {
+    if (blink < 0.55) continue;
+    const pop = Math.min(1, (blink - 0.55) / 0.35);
+    drawSpark(ctx, pos.x + side * eyeR * 1.35, pos.y - eyeR * 0.85, eyeR * (0.45 + pop * 0.35), accent);
   }
 
-  // Mouth ring responds to jawOpen
-  const mouthR = Math.max(10, face.faceWidth * (0.09 + face.jawOpen * 0.14));
-  ctx.beginPath();
-  ctx.ellipse(
-    face.mouthPos.x,
-    face.mouthPos.y,
-    mouthR * 1.15,
-    Math.max(4, mouthR * (0.35 + face.jawOpen * 0.85)),
-    0,
-    0,
-    Math.PI * 2,
-  );
-  ctx.strokeStyle = face.jawOpen > 0.32 ? '#3fd4a2' : '#ffffff';
-  ctx.lineWidth = face.jawOpen > 0.32 ? 3.5 : 2;
-  ctx.stroke();
+  if (face.jawOpen > 0.32) {
+    const open = Math.min(1, (face.jawOpen - 0.32) / 0.45);
+    for (let i = 0; i < 3; i++) {
+      const phase = (now * 0.7 + i / 3) % 1;
+      const bx = face.mouthPos.x + Math.sin(now * 2.4 + i * 2) * face.faceWidth * 0.07;
+      const by = face.mouthPos.y - phase * face.faceWidth * (0.12 + open * 0.16);
+      const r = (3 + phase * 7) * (0.6 + open * 0.4);
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.35 + phase * 0.4})`;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = accent;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(bx - r * 0.3, by - r * 0.3, Math.max(1.2, r * 0.28), 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    }
+  }
 
+  ctx.restore();
+}
+
+/**
+ * Cartoon sweat at the temples. `danger` is 0..1; drops grow as it rises,
+ * and the pair shakes once the face is close to breaking.
+ */
+export function drawFaceSweat(ctx: CanvasRenderingContext2D, face: FaceState, danger: number) {
+  if (!face.present || danger < 0.18) return;
+  const count = danger > 0.72 ? 3 : danger > 0.42 ? 2 : 1;
+  const scale = 0.7 + danger * 0.7;
+  const shake = danger > 0.72 ? Math.sin(performance.now() * 0.05) * 2.4 : 0;
+  const reach = face.faceWidth * 0.22;
+  ctx.save();
+  ctx.translate(shake, 0);
+  for (const side of [-1, 1]) {
+    const ox = (side < 0 ? face.leftEyePos.x : face.rightEyePos.x) + side * reach;
+    const oy = (side < 0 ? face.leftEyePos.y : face.rightEyePos.y) - face.faceWidth * 0.02;
+    for (let i = 0; i < count; i++) {
+      const dropY = oy + i * 14 * scale;
+      const r = (7 - i * 0.8) * scale;
+      ctx.beginPath();
+      ctx.arc(ox, dropY + 2, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#3a2d5c';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(ox, dropY - r * 1.35);
+      ctx.quadraticCurveTo(ox + r * 1.15, dropY, ox, dropY + r);
+      ctx.quadraticCurveTo(ox - r * 1.15, dropY, ox, dropY - r * 1.35);
+      ctx.fillStyle = '#7ee0ff';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#3a2d5c';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ox - r * 0.28, dropY - r * 0.15, r * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    }
+  }
   ctx.restore();
 }

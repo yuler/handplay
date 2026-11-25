@@ -1,5 +1,6 @@
 import { sfx } from '../audio/sfx';
-import { drawFaceOverlay, type FaceState } from '../vision/faceEngine';
+import { drawFaceOverlay } from '../vision/faceEngine';
+import { drawPufferfish, PUFFER_EYE, type PufferMood } from './mouthMunchArt';
 import { FxSystem } from './particles';
 import { CANDY, EMOJI_FONT, font, INK, stickerPill } from './theme';
 import type { GameController, GameOverSummary, SensorFrame } from './types';
@@ -164,12 +165,13 @@ export class MouthMunchGame implements GameController {
     }
   }
 
-  private fireEyeLasers(avatarY: number) {
+  private fireEyeLasers(avatarY: number, shield: boolean) {
     this.laserCooldown = BLINK_COOLDOWN_SEC;
+    const s = shield ? 1.25 : 1;
     this.lasers.push({
-      x1: this.avatarX - 18,
-      x2: this.avatarX + 18,
-      yStart: avatarY - 22,
+      x1: this.avatarX - PUFFER_EYE.x * s,
+      x2: this.avatarX + PUFFER_EYE.x * s,
+      yStart: avatarY + PUFFER_EYE.y * s,
       life: 0.24,
       maxLife: 0.24,
     });
@@ -250,7 +252,7 @@ export class MouthMunchGame implements GameController {
       const bothBlink = face.blinkL > BLINK_LASER_THRESH && face.blinkR > BLINK_LASER_THRESH;
       if (bothBlink && this.blinkArmed && this.laserCooldown <= 0) {
         this.blinkArmed = false;
-        this.fireEyeLasers(avatarY);
+        this.fireEyeLasers(avatarY, shieldActive);
       } else if (face.blinkL < 0.32 && face.blinkR < 0.32) {
         this.blinkArmed = true;
       }
@@ -370,100 +372,12 @@ export class MouthMunchGame implements GameController {
     }
   }
 
-  private drawAvatar(ctx: CanvasRenderingContext2D, x: number, y: number, face: FaceState) {
-    const jaw = face.present ? face.jawOpen : 0;
-    const open = jaw > JAW_OPEN_THRESH;
-    const shield = face.present && face.cheekPuff > CHEEK_SHIELD_THRESH;
-    const now = performance.now() * 0.006;
-
-    ctx.save();
-    ctx.translate(x, y);
-
-    // Suction vortex rings when mouth is open
-    if (open) {
-      for (let k = 0; k < 3; k++) {
-        const phase = (now * 1.4 + k / 3) % 1;
-        const r = SUCTION_RADIUS * (1 - phase);
-        ctx.beginPath();
-        ctx.arc(0, 0, Math.max(18, r), 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(63, 212, 162, ${phase * 0.55})`;
-        ctx.lineWidth = 4;
-        ctx.stroke();
-      }
-    }
-
-    // Cheek-puff bubble shield
-    if (shield) {
-      const pulse = 54 + Math.sin(now * 2.5) * 4;
-      ctx.beginPath();
-      ctx.arc(0, 0, pulse, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(63, 212, 162, 0.22)';
-      ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = CANDY.mint;
-      ctx.stroke();
-    }
-
-    // Body shadow + chubby body
-    const squishX = 1 + (shield ? 0.14 : 0) + this.mouthChompAnim * 0.1;
-    const squishY = 1 - this.mouthChompAnim * 0.08 + (open ? 0.06 : 0);
-    ctx.scale(squishX, squishY);
-
-    ctx.beginPath();
-    ctx.arc(0, 5, 38, 0, Math.PI * 2);
-    ctx.fillStyle = INK;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(0, 0, 38, 0, Math.PI * 2);
-    ctx.fillStyle = open ? CANDY.sun : CANDY.cream;
-    ctx.fill();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
-
-    // Blush cheeks (puff bigger when cheekPuff!)
-    const cheekR = shield ? 11 : 7;
-    ctx.fillStyle = CANDY.pink;
-    ctx.beginPath();
-    ctx.arc(-22, 4, cheekR, 0, Math.PI * 2);
-    ctx.arc(22, 4, cheekR, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Eyes (mirror player blink!)
-    const blinkAmt = face.present ? Math.max(face.blinkL, face.blinkR) : 0;
-    const eyeH = Math.max(1.5, 7 * (1 - blinkAmt * 0.85));
-    ctx.fillStyle = INK;
-    ctx.beginPath();
-    ctx.ellipse(-14, -12, 5.5, eyeH, 0, 0, Math.PI * 2);
-    ctx.ellipse(14, -12, 5.5, eyeH, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (eyeH > 3) {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(-16, -14, 2, 0, Math.PI * 2);
-      ctx.arc(12, -14, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Mouth (scales smoothly with jawOpen)
-    const mouthW = 12 + jaw * 16;
-    const mouthH = Math.max(4, jaw * 26);
-    ctx.beginPath();
-    ctx.ellipse(0, 12, mouthW, mouthH, 0, 0, Math.PI * 2);
-    ctx.fillStyle = open ? '#ff4d6d' : INK;
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
-    if (open) {
-      ctx.beginPath();
-      ctx.ellipse(0, 12 + mouthH * 0.35, mouthW * 0.55, mouthH * 0.35, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#ff8fa3';
-      ctx.fill();
-    }
-
-    ctx.restore();
+  private pufferMood(): PufferMood {
+    if (this.flashAlpha > 0.05) return 'dizzy';
+    if (this.lasers.length > 0) return 'laser';
+    if (this.mouthChompAnim > 0.15) return 'chomp';
+    if (this.combo >= 5) return 'fever';
+    return 'follow';
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
@@ -472,8 +386,7 @@ export class MouthMunchGame implements GameController {
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    // Subtle AR face contour
-    drawFaceOverlay(ctx, face, face.jawOpen > JAW_OPEN_THRESH ? CANDY.mint : CANDY.sky, 0.35);
+    drawFaceOverlay(ctx, face, face.jawOpen > JAW_OPEN_THRESH ? CANDY.mint : CANDY.sun);
 
     if (this.flashAlpha > 0) {
       ctx.save();
@@ -533,9 +446,20 @@ export class MouthMunchGame implements GameController {
       ctx.restore();
     }
 
-    // Cute mouth-eater avatar
     const avatarY = h * 0.77;
-    this.drawAvatar(ctx, this.avatarX, avatarY, face);
+    const shield = face.present && face.cheekPuff > CHEEK_SHIELD_THRESH;
+    ctx.save();
+    ctx.translate(this.avatarX, avatarY);
+    drawPufferfish(ctx, {
+      jaw: face.present ? face.jawOpen : 0,
+      blinkL: face.present ? face.blinkL : 0,
+      blinkR: face.present ? face.blinkR : 0,
+      shield,
+      suction: face.present && face.jawOpen > JAW_OPEN_THRESH,
+      mood: this.pufferMood(),
+      time: performance.now() * 0.001,
+    });
+    ctx.restore();
 
     // Fever / combo badge
     if (this.combo >= 3) {

@@ -471,7 +471,10 @@ export class FingerRuneGame implements GameController {
 
     // Magic wand cursor at index fingertip
     if (hand.present) {
-      drawHandCursor(ctx, hand.indexTip, this.drawing ? CANDY.sun : CANDY.sky, { radius: this.drawing ? 14 : 11 });
+      drawHandCursor(ctx, hand.indexTip, this.drawing ? CANDY.sun : CANDY.sky, {
+        radius: this.drawing ? 14 : 11,
+        mood: this.drawing ? 'excited' : 'idle',
+      });
     }
 
     // Combo badge

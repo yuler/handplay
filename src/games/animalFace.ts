@@ -1,5 +1,4 @@
 import { sfx } from '../audio/sfx';
-import { drawFaceOverlay } from '../vision/faceEngine';
 import {
   ANIMAL_PROMPTS,
   type AnimalId,
@@ -174,11 +173,6 @@ export class AnimalFaceGame implements GameController {
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, frame: SensorFrame) {
     const { face } = frame;
-
-    // Subtle AR face contour when waiting for expression
-    if (face.present && !this.activeSticker) {
-      drawFaceOverlay(ctx, face, this.current.accent, 0.32);
-    }
 
     // Draw live AR animal sticker on the child's face!
     // Show subtle preview while matching, and full bouncing sticker when matched!
