@@ -1,10 +1,10 @@
 # HandPlay · 手机摄像头体感小游戏
 
-基于 `@mediapipe/tasks-vision`（HandLandmarker + FaceLandmarker WASM + WebGL2 GPU Delegate）与 **One Euro Filter** 构建的纯手机端前置摄像头体感小游戏合集，画面完全在本地浏览器推理，不上传服务器。
+基于 `@mediapipe/tasks-vision`（HandLandmarker + FaceLandmarker + PoseLandmarker WASM + WebGL2 GPU Delegate）与 **One Euro Filter** 构建的纯手机端前置摄像头体感小游戏合集，画面完全在本地浏览器推理，不上传服务器。
 
 在线体验：**https://handplay.yuler.dev**
 
-## 内置十九款游戏
+## 内置二十款游戏
 
 ### ✋ 单手隔空玩
 1. **小花猫逗猫乐（Kitty Chase）**
@@ -44,6 +44,9 @@
 
 ### 😜 完全解放双手（续）
 19. **转头打地鼠**：转头选列，点头敲地鼠
+
+### 💪 放到地上计数
+20. **俯卧撑计数**：手机立在身前或身体侧面，上半身放进框里。手臂伸直、下去、手撑住再撑起来才算一次，半程不计分
 
 ## 本地开发与部署
 

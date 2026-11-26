@@ -1,5 +1,6 @@
 import type { FaceState } from '../vision/faceEngine';
 import type { HandState } from '../vision/gestures';
+import type { PoseState } from '../vision/poseEngine';
 
 export type GameId =
   | 'gesture-rush'
@@ -20,14 +21,16 @@ export type GameId =
   | 'wipe-glass'
   | 'palm-torch'
   | 'coin-magnet'
-  | 'mole-nod';
+  | 'mole-nod'
+  | 'push-up';
 
-export type SensorMode = 'hand1' | 'hand2' | 'face';
+export type SensorMode = 'hand1' | 'hand2' | 'face' | 'pose';
 
 export interface SensorFrame {
   hand: HandState;
   hands: HandState[];
   face: FaceState;
+  pose: PoseState;
   video: HTMLVideoElement;
 }
 

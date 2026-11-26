@@ -3,6 +3,7 @@ import { DEBUG } from './debug';
 import type { GameController, SensorMode } from './games/types';
 import { EMPTY_FACE, type FaceEngine } from './vision/faceEngine';
 import { EMPTY_HAND, type HandEngine } from './vision/handEngine';
+import { EMPTY_POSE, type PoseEngine } from './vision/poseEngine';
 
 /** running: updating; hidden: tab away; countdown: resume 3-2-1; missing: required hand/face absent */
 type RunState = 'running' | 'hidden' | 'countdown' | 'missing';
@@ -15,6 +16,7 @@ const PROMPT_TEXT: Record<SensorMode, string> = {
   hand1: '把小手放到镜头前 ✋',
   hand2: '把小手放到镜头前 ✋',
   face: '把脸对准镜头 😊',
+  pose: '让肩膀和双手进画面 💪',
 };
 
 export interface RuntimeDeps {
@@ -22,6 +24,7 @@ export interface RuntimeDeps {
   video: HTMLVideoElement;
   hand: HandEngine;
   face: FaceEngine;
+  pose: PoseEngine;
   hudScore: HTMLElement;
   hudTimer: HTMLElement;
   fpsTag: HTMLElement;
@@ -158,14 +161,17 @@ export class GameRuntime {
     if (!game || this.run === 'hidden') return;
 
     const { vw, vh } = this;
-    const isFace = game.sensor === 'face';
-    const hand = isFace ? EMPTY_HAND : this.d.hand.update(vw, vh);
-    const hands = isFace ? [] : this.d.hand.hands;
-    const face = isFace ? this.d.face.update(vw, vh) : EMPTY_FACE;
-    const frame = { hand, hands, face, video: this.d.video };
+    const mode = game.sensor;
+    const useHand = mode === 'hand1' || mode === 'hand2';
+    const hand = useHand ? this.d.hand.update(vw, vh) : EMPTY_HAND;
+    const hands = useHand ? this.d.hand.hands : [];
+    const face = mode === 'face' ? this.d.face.update(vw, vh) : EMPTY_FACE;
+    const pose = mode === 'pose' ? this.d.pose.update(vw, vh) : EMPTY_POSE;
+    const frame = { hand, hands, face, pose, video: this.d.video };
 
     if (this.run === 'running' || this.run === 'missing') {
-      const present = isFace ? face.present : game.sensor === 'hand2' ? hands.length > 0 : hand.present;
+      const present =
+        mode === 'face' ? face.present : mode === 'pose' ? pose.present : mode === 'hand2' ? hands.length > 0 : hand.present;
       this.elapsed += dt;
       this.missingFor = present ? 0 : this.missingFor + dt;
       if (this.run === 'running' && this.elapsed > PROMPT_GRACE_SEC && this.missingFor > MISSING_SEC) {
@@ -189,8 +195,8 @@ export class GameRuntime {
     this.renderHud(game);
 
     if (DEBUG) {
-      const stats = isFace ? this.d.face.stats : this.d.hand.stats;
-      const modeTag = isFace ? 'FACE' : game.sensor === 'hand2' ? '2H' : '1H';
+      const stats = mode === 'face' ? this.d.face.stats : mode === 'pose' ? this.d.pose.stats : this.d.hand.stats;
+      const modeTag = mode === 'face' ? 'FACE' : mode === 'pose' ? 'POSE' : mode === 'hand2' ? '2H' : '1H';
       this.d.fpsTag.textContent = `${modeTag} · ${stats.delegate} · ${stats.fps} fps · ${this.run}`;
     }
   }

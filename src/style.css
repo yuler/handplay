@@ -381,6 +381,7 @@ button {
 .game-card.torch { background: linear-gradient(160deg, #fff 55%, #fff0c9 100%); }
 .game-card.coin { background: linear-gradient(160deg, #fff 55%, #ffe7a3 100%); }
 .game-card.mole { background: linear-gradient(160deg, #fff 55%, #e5f6c8 100%); }
+.game-card.push { background: linear-gradient(160deg, #fff 55%, #d8f7ec 100%); }
 
 .game-icon {
   width: 72px;
@@ -446,6 +447,7 @@ button {
 .torch .game-icon { background: #ffd36a; }
 .coin .game-icon { background: #ffb703; transform: rotate(-4deg); }
 .mole .game-icon { background: #b6e388; transform: rotate(5deg); }
+.push .game-icon { background: #3fd4a2; transform: rotate(-4deg); }
 
 .game-meta {
   flex: 1;
