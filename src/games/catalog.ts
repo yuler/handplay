@@ -225,6 +225,17 @@ export const GAMES: GameMeta[] = [
     tags: ['⏱ 45 秒', '🙂 转头点头'],
     load: () => import('./moleNod').then((m) => m.MoleNodGame),
   },
+  {
+    id: 'push-up',
+    title: '俯卧撑计数',
+    icon: '💪',
+    desc: '手机立在身前或身体侧面。手臂伸直，下去再撑起来，才算一次。',
+    theme: 'push',
+    sensor: 'pose',
+    sensorTag: '💪 全身',
+    tags: ['⏱ 45 秒', '✅ 完整才算'],
+    load: () => import('./pushup').then((m) => m.PushupGame),
+  },
 ];
 
 export const GAME_MAP = Object.fromEntries(GAMES.map((g) => [g.id, g])) as Record<GameId, GameMeta>;
@@ -233,6 +244,7 @@ export const LOBBY_SECTIONS: Array<{ label: string; sensor: SensorMode }> = [
   { label: '✋ 单手隔空玩', sensor: 'hand1' },
   { label: '😜 完全解放双手（脸部体感）', sensor: 'face' },
   { label: '🙌 桌面支架挑战（双手同屏）', sensor: 'hand2' },
+  { label: '💪 放到地上计数', sensor: 'pose' },
 ];
 
 export function isGameId(id: string): id is GameId {

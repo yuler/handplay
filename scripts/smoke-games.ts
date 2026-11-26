@@ -9,6 +9,7 @@ import { COIN_Y, JAR_Y } from '../src/games/coinMagnet';
 import { SERVE_Y } from '../src/games/fruitSlash';
 import { EMPTY_FACE, type FaceState } from '../src/vision/faceEngine';
 import { EMPTY_HAND, type HandState } from '../src/vision/handEngine';
+import { EMPTY_POSE, type PoseState } from '../src/vision/poseEngine';
 import type { GameController, SensorFrame } from '../src/games/types';
 
 const W = 400;
@@ -63,8 +64,8 @@ function faceAt(extra: Partial<FaceState> = {}): FaceState {
   };
 }
 
-function frame(hand: HandState, face: FaceState): SensorFrame {
-  return { hand, hands: hand.present ? [hand] : [], face, video: {} as HTMLVideoElement };
+function frame(hand: HandState, face: FaceState, pose: PoseState = EMPTY_POSE): SensorFrame {
+  return { hand, hands: hand.present ? [hand] : [], face, pose, video: {} as HTMLVideoElement };
 }
 
 const ctx = mockCtx();
@@ -258,6 +259,52 @@ const motion = (async () => {
   console.log('ok  track change clears drum and firework motion');
 })();
 
+function pushPose(angle: number, shoulderY: number, wristY = 520): PoseState {
+  return {
+    ...EMPTY_POSE,
+    present: true,
+    leftShoulder: { x: 200, y: shoulderY, vis: 1 },
+    leftElbow: { x: 160, y: (shoulderY + wristY) / 2, vis: 1 },
+    leftWrist: { x: 200, y: wristY, vis: 1 },
+    leftElbowAngle: angle,
+  };
+}
+
+const pushup = (async () => {
+  const game = await loadGame('push-up');
+  const feed = (pose: PoseState, n: number, dt = 0.05) => {
+    for (let i = 0; i < n; i++) game.update(dt, W, H, frame(EMPTY_HAND, EMPTY_FACE, pose));
+  };
+  const straight = () => pushPose(168, 250);
+  const bottom = () => pushPose(80, 430);
+  feed(straight(), 12);
+  feed(pushPose(130, 300), 6);
+  feed(straight(), 4);
+  if (game.getHud().score !== 0) throw new Error(`push-up counted a shallow rep (${game.getHud().score})`);
+
+  game.reset();
+  feed(straight(), 12);
+  feed(pushPose(80, 250, 300), 8);
+  feed(straight(), 4);
+  if (game.getHud().score !== 0) throw new Error(`push-up counted a curl (${game.getHud().score})`);
+
+  game.reset();
+  feed(straight(), 12);
+  feed(bottom(), 1);
+  feed(straight(), 3);
+  if (game.getHud().score !== 0) throw new Error(`push-up counted a one-frame dip (${game.getHud().score})`);
+
+  game.reset();
+  feed(straight(), 12);
+  feed(bottom(), 8);
+  feed(straight(), 4);
+  feed(pushPose(80, 270), 8);
+  feed(straight(), 4);
+  if (game.getHud().score !== 2) throw new Error(`push-up expected 2 reps, got ${game.getHud().score}`);
+  game.draw(ctx, W, H, frame(EMPTY_HAND, EMPTY_FACE, straight()));
+  console.log('ok  push-up counts full reps only');
+})();
+
 const crash = (async () => {
   for (const meta of GAMES) {
     const Ctor = await meta.load();
@@ -270,5 +317,5 @@ const crash = (async () => {
   console.log(`ok  catalog ${GAMES.length} games draw`);
 })();
 
-await Promise.all([...scripts, crash, motion]);
+await Promise.all([...scripts, crash, motion, pushup]);
 console.log('smoke passed');

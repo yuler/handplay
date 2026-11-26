@@ -1,4 +1,4 @@
-import type { FaceLandmarker, HandLandmarker } from '@mediapipe/tasks-vision';
+import type { FaceLandmarker, HandLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 export type DelegateKind = 'GPU' | 'CPU';
 export type VisionStage = 'idle' | 'download' | 'init' | 'ready' | 'error';
@@ -12,11 +12,13 @@ export interface VisionLoadState {
 const WASM_BASE = '/mediapipe/wasm';
 const HAND_MODEL_URL = '/models/hand_landmarker.task';
 const FACE_MODEL_URL = '/models/face_landmarker.task';
+const POSE_MODEL_URL = '/models/pose_landmarker_lite.task';
 
 /** Fallback byte sizes when the server compresses and Content-Length is unusable. */
 const SIZE = {
   handModel: 7_819_105,
   faceModel: 3_758_596,
+  poseModel: 5_777_746,
   simd: 11_153_617,
   nosimd: 10_481_398,
 };
@@ -210,6 +212,64 @@ export async function createFaceLandmarker(
       return { landmarker: await create('GPU'), delegate: 'GPU' };
     } catch (err) {
       console.warn('[FaceEngine] GPU unavailable, falling back to CPU:', err);
+      return { landmarker: await create('CPU'), delegate: 'CPU' };
+    }
+  } finally {
+    URL.revokeObjectURL(wasmUrl);
+  }
+}
+
+/** Lite pose model. Push-up counting is the only caller; other games never download it. */
+export async function createPoseLandmarker(
+  onState: (s: VisionLoadState) => void,
+): Promise<{ landmarker: PoseLandmarker; delegate: DelegateKind }> {
+  const { PoseLandmarker } = await import('@mediapipe/tasks-vision');
+
+  const wasmEst = cachedWasm ? 0 : SIZE.simd;
+  const parts = { wasm: [0, wasmEst], model: [0, SIZE.poseModel] };
+  const emit = () =>
+    onState({
+      stage: 'download',
+      loaded: parts.wasm[0] + parts.model[0],
+      total: Math.max(1, parts.wasm[1] + parts.model[1]),
+    });
+  emit();
+
+  const [wasm, modelBytes] = await Promise.all([
+    loadWasmOnce((l, t) => {
+      if (!cachedWasm) {
+        parts.wasm = [l, t];
+        emit();
+      }
+    }),
+    fetchBytes(POSE_MODEL_URL, SIZE.poseModel, (l, t) => {
+      parts.model = [l, t];
+      emit();
+    }),
+  ]);
+
+  const total = parts.wasm[1] + modelBytes.length;
+  onState({ stage: 'init', loaded: total, total });
+
+  const wasmUrl = URL.createObjectURL(
+    new Blob([wasm.wasmBytes as BlobPart], { type: 'application/wasm' }),
+  );
+  const fileset = { wasmLoaderPath: `${WASM_BASE}/${wasm.wasmName}.js`, wasmBinaryPath: wasmUrl };
+  const create = (delegate: DelegateKind) =>
+    PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetBuffer: modelBytes, delegate },
+      runningMode: 'VIDEO',
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+
+  try {
+    try {
+      return { landmarker: await create('GPU'), delegate: 'GPU' };
+    } catch (err) {
+      console.warn('[PoseEngine] GPU unavailable, falling back to CPU:', err);
       return { landmarker: await create('CPU'), delegate: 'CPU' };
     }
   } finally {

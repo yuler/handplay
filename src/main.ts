@@ -12,6 +12,7 @@ import { describeStartError } from './ui/startError';
 import { CameraManager } from './vision/camera';
 import { FaceEngine } from './vision/faceEngine';
 import { HandEngine, type VisionLoadState } from './vision/handEngine';
+import { PoseEngine } from './vision/poseEngine';
 
 const LOBBY_TITLE = '手手玩 · HandPlay 隔空小游戏';
 
@@ -53,11 +54,13 @@ const resStats = $('res-stats');
 const camera = new CameraManager();
 const handEngine = new HandEngine();
 const faceEngine = new FaceEngine();
+const poseEngine = new PoseEngine();
 const runtime = new GameRuntime({
   canvas: canvasEl,
   video: videoEl,
   hand: handEngine,
   face: faceEngine,
+  pose: poseEngine,
   hudScore: $('hud-score'),
   hudTimer: $('hud-timer'),
   fpsTag: $('fps-tag'),
@@ -191,6 +194,7 @@ function onFinish(summary: GameOverSummary) {
 function resetVision() {
   handEngine.resetTracking();
   faceEngine.reset();
+  poseEngine.reset();
 }
 
 function beginRound(game: GameController) {
@@ -212,8 +216,9 @@ async function startGame(id: GameId) {
   document.title = `${meta.title} · 手手玩`;
 
   const needFace = meta.sensor === 'face';
-  const engine = needFace ? faceEngine : handEngine;
-  const modelName = needFace ? '脸部识别' : '小手识别';
+  const needPose = meta.sensor === 'pose';
+  const engine = needPose ? poseEngine : needFace ? faceEngine : handEngine;
+  const modelName = needPose ? '身体识别' : needFace ? '脸部识别' : '小手识别';
   const quick = camera.live && engine.ready;
   let cameraReady = false;
   let unsubscribe = () => {};
@@ -221,7 +226,7 @@ async function startGame(id: GameId) {
   screen = 'loading';
   const showLoader = () => {
     if (token !== navToken || screen !== 'loading') return;
-    stepModelLabel.textContent = needFace ? '😜 脸部识别' : '🧠 小手识别';
+    stepModelLabel.textContent = needPose ? '💪 身体识别' : needFace ? '😜 脸部识别' : '🧠 小手识别';
     renderLoader(modelName, cameraReady, engine.load);
     loaderEl.classList.remove('hidden');
     unsubscribe = engine.onLoadChange((s) => renderLoader(modelName, cameraReady, s));
@@ -242,7 +247,7 @@ async function startGame(id: GameId) {
     });
     const [, , Ctor] = await Promise.all([camTask, engine.init(videoEl), meta.load()]);
     if (token !== navToken) return;
-    if (!needFace) await handEngine.setNumHands(meta.sensor === 'hand2' ? 2 : 1);
+    if (!needFace && !needPose) await handEngine.setNumHands(meta.sensor === 'hand2' ? 2 : 1);
     if (token !== navToken) return;
     game = new Ctor(onFinish);
   } catch (err) {
